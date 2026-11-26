@@ -32,11 +32,9 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -57,7 +55,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gireesh.camviewsplit.camera.CameraCaptureManager
 import com.gireesh.camviewsplit.ui.theme.CyanPrimary
-import com.gireesh.camviewsplit.ui.theme.DarkBackground
 import com.gireesh.camviewsplit.ui.theme.DarkSurface
 import com.gireesh.camviewsplit.ui.theme.RecRed
 import com.gireesh.camviewsplit.ui.theme.TealAccent
@@ -87,12 +84,6 @@ fun CameraSection(
 
     LaunchedEffect(lifecycleOwner) {
         cameraCaptureManager.startCamera(lifecycleOwner, previewView)
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            // Keep provider unbound when view is completely disposed
-        }
     }
 
     // Blinking effect for the red recording dot
@@ -156,7 +147,7 @@ fun CameraSection(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "CamView Split",
+                        text = "SplitCam",
                         color = Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold

@@ -100,6 +100,8 @@ fun MainScreen() {
 
             if (!hasCameraPermission) {
                 Toast.makeText(context, "Camera permission is required for live preview", Toast.LENGTH_LONG).show()
+            } else if (!hasAudioPermission) {
+                Toast.makeText(context, "Microphone permission denied: Videos will be recorded without sound", Toast.LENGTH_LONG).show()
             }
         }
     )
@@ -183,7 +185,7 @@ fun MainScreen() {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "CamView Split requires camera and microphone permissions to capture live video and photos.",
+                        text = "SplitCam requires camera and microphone permissions to capture live video and photos.",
                         color = TextSecondary,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center
@@ -351,10 +353,5 @@ fun MainScreen() {
                 }
             }
         }
-    }
-
-    // Video Recording callback setup to automatically switch bottom section to the recorded video
-    LaunchedEffect(Unit) {
-        // When video recording stops, startVideoRecording's onSuccess callback is called
     }
 }

@@ -5,7 +5,6 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
-import androidx.core.content.FileProvider
 import com.gireesh.camviewsplit.model.MediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -234,8 +233,8 @@ class MediaRepository(private val context: Context) {
                 MediaStore.Video.Media.DATE_ADDED,
                 MediaStore.Video.Media.DURATION
             )
-            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
-            val selectionArgs = arrayOf("CamViewSplit_%")
+            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf("SplitCam_%", "CamViewSplit_%")
 
             context.contentResolver.query(
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
@@ -311,14 +310,18 @@ class MediaRepository(private val context: Context) {
     }
 
     private fun retrieveVideoDuration(uri: Uri): Long {
+        val retriever = MediaMetadataRetriever()
         return try {
-            val retriever = MediaMetadataRetriever()
             retriever.setDataSource(context, uri)
             val time = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-            retriever.release()
             time?.toLongOrNull() ?: 0L
         } catch (_: Exception) {
             0L
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {
+            }
         }
     }
 }

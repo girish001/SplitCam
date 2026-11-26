@@ -74,7 +74,7 @@ class CameraCaptureManager(
         lifecycleOwner: LifecycleOwner,
         previewView: PreviewView
     ) {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context.applicationContext)
         cameraProviderFuture.addListener({
             try {
                 cameraProvider = cameraProviderFuture.get()
@@ -174,13 +174,13 @@ class CameraCaptureManager(
         }
 
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
-        val displayName = "CamViewSplit_IMG_$timestamp.jpg"
+        val displayName = "SplitCam_IMG_$timestamp.jpg"
 
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
             put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CamViewSplit/")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/SplitCam/")
             }
         }
 
@@ -225,13 +225,13 @@ class CameraCaptureManager(
         }
 
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
-        val displayName = "CamViewSplit_VID_$timestamp.mp4"
+        val displayName = "SplitCam_VID_$timestamp.mp4"
 
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
             put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/CamViewSplit/")
+                put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/SplitCam/")
             }
         }
 

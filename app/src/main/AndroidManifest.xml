@@ -26,13 +26,13 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MyApplication">
+        android:theme="@style/Theme.SplitCam">
         <activity
             android:name="com.gireesh.camviewsplit.MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:label="@string/app_name"
-            android:theme="@style/Theme.MyApplication">
+            android:theme="@style/Theme.SplitCam">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
