@@ -108,6 +108,9 @@ import com.gireesh.camviewsplit.ui.theme.TealAccent
 import com.gireesh.camviewsplit.ui.theme.TextPrimary
 import com.gireesh.camviewsplit.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -243,6 +246,13 @@ fun MainScreen() {
         )
     }
 
+    var hasWriteStoragePermission by remember {
+        mutableStateOf(
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
         onResult = { permissions ->
@@ -250,15 +260,21 @@ fun MainScreen() {
                     ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
             hasAudioPermission = permissions[Manifest.permission.RECORD_AUDIO] == true ||
                     ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            hasWriteStoragePermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                    permissions[Manifest.permission.WRITE_EXTERNAL_STORAGE] == true ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         }
     )
 
     LaunchedEffect(Unit) {
-        if (!hasCameraPermission || !hasAudioPermission) {
+        if (!hasCameraPermission || !hasAudioPermission || (!hasWriteStoragePermission && Build.VERSION.SDK_INT <= Build.VERSION_CODES.P)) {
             val permissionsToRequest = mutableListOf(
                 Manifest.permission.CAMERA,
                 Manifest.permission.RECORD_AUDIO
             )
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
             }
@@ -778,11 +794,27 @@ fun MainScreen() {
     }
 }
 
-private fun saveVideoToPublicGallery(context: Context, sourceFile: File, displayName: String): Uri? {
+private suspend fun scanMediaFileAsync(context: Context, filePath: String, mimeType: String): Uri? {
+    return withTimeoutOrNull(5000L) {
+        suspendCancellableCoroutine { continuation ->
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(filePath),
+                arrayOf(mimeType)
+            ) { _, uri ->
+                if (continuation.isActive) {
+                    continuation.resume(uri)
+                }
+            }
+        }
+    }
+}
+
+private suspend fun saveVideoToPublicGallery(context: Context, sourceFile: File, displayName: String): Uri? = withContext(Dispatchers.IO) {
     val sourceLength = sourceFile.length()
     if (!sourceFile.exists() || sourceLength <= 0L) {
         android.util.Log.e("MainScreen", "saveVideoToPublicGallery: sourceFile does not exist or is empty.")
-        return null
+        return@withContext null
     }
 
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -794,7 +826,7 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
 
         if (!writePermissionGranted) {
             android.util.Log.e("MainScreen", "saveVideoToPublicGallery (<API29): WRITE_EXTERNAL_STORAGE permission denied.")
-            return null
+            return@withContext null
         }
 
         try {
@@ -813,7 +845,7 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
             if (bytesCopied != sourceLength || !publicFile.exists() || publicFile.length() != sourceLength) {
                 android.util.Log.e("MainScreen", "saveVideoToPublicGallery (<API29): bytesCopied ($bytesCopied) != sourceLength ($sourceLength).")
                 if (publicFile.exists()) publicFile.delete()
-                return null
+                return@withContext null
             }
 
             val contentValues = ContentValues().apply {
@@ -830,20 +862,7 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
             }
 
             if (resultUri == null) {
-                val latch = java.util.concurrent.CountDownLatch(1)
-                MediaScannerConnection.scanFile(
-                    context,
-                    arrayOf(publicFile.absolutePath),
-                    arrayOf("video/mp4")
-                ) { _, uri ->
-                    if (uri != null && uri.scheme == "content") {
-                        resultUri = uri
-                    }
-                    latch.countDown()
-                }
-                try {
-                    latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
-                } catch (_: Exception) {}
+                resultUri = scanMediaFileAsync(context, publicFile.absolutePath, "video/mp4")
             }
 
             // Verify final URI is a valid content:// URI that can be opened and has exact matching file size
@@ -853,17 +872,17 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
                     val savedSize = pfd.statSize
                     pfd.close()
                     if (savedSize == sourceLength) {
-                        return resultUri
+                        return@withContext resultUri
                     }
                 }
             }
 
             // Failure path: Clean up file if no valid content:// URI with matching size was generated
             if (publicFile.exists()) publicFile.delete()
-            return null
+            return@withContext null
         } catch (e: Exception) {
             android.util.Log.e("MainScreen", "saveVideoToPublicGallery (<API29) failed: ${e.localizedMessage}", e)
-            return null
+            return@withContext null
         }
     }
 
@@ -878,7 +897,7 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
     val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
     if (uri == null) {
         android.util.Log.e("MainScreen", "saveVideoToPublicGallery (API29+): MediaStore insert returned null.")
-        return null
+        return@withContext null
     }
 
     var bytesCopied = 0L
@@ -886,7 +905,7 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
         val outputStream = context.contentResolver.openOutputStream(uri) ?: run {
             android.util.Log.e("MainScreen", "saveVideoToPublicGallery (API29+): openOutputStream returned null.")
             context.contentResolver.delete(uri, null, null)
-            return null
+            return@withContext null
         }
 
         outputStream.use { output ->
@@ -898,7 +917,7 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
         if (bytesCopied != sourceLength) {
             android.util.Log.e("MainScreen", "saveVideoToPublicGallery (API29+): bytesCopied ($bytesCopied) != sourceLength ($sourceLength).")
             context.contentResolver.delete(uri, null, null)
-            return null
+            return@withContext null
         }
 
         contentValues.clear()
@@ -907,15 +926,15 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
         if (updatedRows <= 0) {
             android.util.Log.e("MainScreen", "saveVideoToPublicGallery (API29+): IS_PENDING update returned 0 rows.")
             context.contentResolver.delete(uri, null, null)
-            return null
+            return@withContext null
         }
 
-        return uri
+        return@withContext uri
     } catch (e: Exception) {
         android.util.Log.e("MainScreen", "saveVideoToPublicGallery (API29+) failed: ${e.localizedMessage}", e)
         try {
             context.contentResolver.delete(uri, null, null)
         } catch (_: Exception) {}
-        return null
+        return@withContext null
     }
 }

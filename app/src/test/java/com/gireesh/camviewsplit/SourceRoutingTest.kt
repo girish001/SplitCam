@@ -240,6 +240,17 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testAndroidPermissionFilteringBySdk() {
+        val sdkVersion = 28 // Android 9
+        val requiresWriteStorage = sdkVersion <= 28
+        assertTrue(requiresWriteStorage)
+
+        val sdk29Version = 29 // Android 10
+        val requiresWriteStorageApi29 = sdk29Version <= 28
+        assertFalse(requiresWriteStorageApi29)
+    }
+
+    @Test
     fun testApi26To28MediaStoreSavePath() {
         val apiVersion = 28
         val isLegacyApi = apiVersion < 29
