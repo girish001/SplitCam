@@ -29,6 +29,7 @@ import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.gireesh.camviewsplit.model.VideoSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -59,7 +60,8 @@ class CameraCaptureManager(
     private var primaryVideoCapture: VideoCapture<Recorder>? = null
     private var secondaryVideoCapture: VideoCapture<Recorder>? = null
 
-    private var activeRecording: Recording? = null
+    private var primaryRecording: Recording? = null
+    private var secondaryRecording: Recording? = null
     private var timerJob: Job? = null
 
     private val _isRecording = MutableStateFlow(false)
@@ -67,9 +69,6 @@ class CameraCaptureManager(
 
     private val _recordingDurationSeconds = MutableStateFlow(0L)
     val recordingDurationSeconds: StateFlow<Long> = _recordingDurationSeconds.asStateFlow()
-
-    private val _lensFacing = MutableStateFlow(CameraSelector.LENS_FACING_BACK)
-    val lensFacing: StateFlow<Int> = _lensFacing.asStateFlow()
 
     private val _isFlashOn = MutableStateFlow(false)
     val isFlashOn: StateFlow<Boolean> = _isFlashOn.asStateFlow()
@@ -125,152 +124,131 @@ class CameraCaptureManager(
         }
     }
 
-    fun startSingleCamera(
+    /**
+     * Central Coordinator for top and bottom viewport camera bindings.
+     */
+    fun syncCameraSources(
         lifecycleOwner: LifecycleOwner,
-        previewView: PreviewView,
-        targetLensFacing: Int = _lensFacing.value
+        topSource: VideoSource,
+        bottomSource: VideoSource,
+        topPreviewView: PreviewView?,
+        bottomPreviewView: PreviewView?
     ) {
-        _lensFacing.value = targetLensFacing
         if (cameraProvider == null) {
             initializeCameraProvider {
-                bindSingleCameraUseCases(lifecycleOwner, previewView)
+                syncCameraSourcesInternal(lifecycleOwner, topSource, bottomSource, topPreviewView, bottomPreviewView)
             }
         } else {
-            bindSingleCameraUseCases(lifecycleOwner, previewView)
+            syncCameraSourcesInternal(lifecycleOwner, topSource, bottomSource, topPreviewView, bottomPreviewView)
         }
     }
 
-    private fun bindSingleCameraUseCases(
+    private fun syncCameraSourcesInternal(
         lifecycleOwner: LifecycleOwner,
-        previewView: PreviewView
+        topSource: VideoSource,
+        bottomSource: VideoSource,
+        topPreviewView: PreviewView?,
+        bottomPreviewView: PreviewView?
     ) {
         val provider = cameraProvider ?: return
 
+        val isTopCamera = topSource is VideoSource.LiveCameraFront || topSource is VideoSource.LiveCameraRear
+        val isBottomCamera = bottomSource is VideoSource.LiveCameraFront || bottomSource is VideoSource.LiveCameraRear
+
         try {
             provider.unbindAll()
+            primaryCamera = null
+            secondaryCamera = null
+            primaryVideoCapture = null
+            secondaryVideoCapture = null
 
-            val cameraSelector = CameraSelector.Builder()
-                .requireLensFacing(_lensFacing.value)
-                .build()
+            if (isTopCamera && isBottomCamera) {
+                val topLens = if (topSource is VideoSource.LiveCameraFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
+                val bottomLens = if (bottomSource is VideoSource.LiveCameraFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
 
-            primaryPreview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
+                if (topLens == bottomLens) {
+                    _errorMessage.value = "Concurrent dual camera requires one Front and one Rear camera. Please select a Gallery Video or switch one camera facing."
+                    return
+                }
 
-            imageCapture = ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .build()
+                if (!_isConcurrentCameraSupported.value) {
+                    _errorMessage.value = "Concurrent dual camera hardware is not supported on this device. Please select a Gallery Video for one section."
+                    return
+                }
 
-            val qualitySelector = QualitySelector.from(
-                Quality.HIGHEST,
-                FallbackStrategy.higherQualityOrLowerThan(Quality.SD)
-            )
-            val recorder = Recorder.Builder()
-                .setQualitySelector(qualitySelector)
-                .build()
-            primaryVideoCapture = VideoCapture.withOutput(recorder)
+                if (topPreviewView == null || bottomPreviewView == null) return
 
-            primaryCamera = provider.bindToLifecycle(
-                lifecycleOwner,
-                cameraSelector,
-                primaryPreview,
-                imageCapture,
-                primaryVideoCapture
-            )
+                val qualitySelector = QualitySelector.from(Quality.SD, FallbackStrategy.lowerQualityOrHigherThan(Quality.SD))
 
-            if (_lensFacing.value == CameraSelector.LENS_FACING_BACK) {
-                primaryCamera?.cameraControl?.enableTorch(_isFlashOn.value)
+                // Top Camera Config
+                val topSelector = CameraSelector.Builder().requireLensFacing(topLens).build()
+                primaryPreview = Preview.Builder().build().also { it.setSurfaceProvider(topPreviewView.surfaceProvider) }
+                val topRecorder = Recorder.Builder().setQualitySelector(qualitySelector).build()
+                primaryVideoCapture = VideoCapture.withOutput(topRecorder)
+                val topGroup = UseCaseGroup.Builder().addUseCase(primaryPreview!!).addUseCase(primaryVideoCapture!!).build()
+                val topConfig = SingleCameraConfig(topSelector, topGroup, lifecycleOwner)
+
+                // Bottom Camera Config
+                val bottomSelector = CameraSelector.Builder().requireLensFacing(bottomLens).build()
+                secondaryPreview = Preview.Builder().build().also { it.setSurfaceProvider(bottomPreviewView.surfaceProvider) }
+                val bottomRecorder = Recorder.Builder().setQualitySelector(qualitySelector).build()
+                secondaryVideoCapture = VideoCapture.withOutput(bottomRecorder)
+                val bottomGroup = UseCaseGroup.Builder().addUseCase(secondaryPreview!!).addUseCase(secondaryVideoCapture!!).build()
+                val bottomConfig = SingleCameraConfig(bottomSelector, bottomGroup, lifecycleOwner)
+
+                val concurrentCamera: ConcurrentCamera = provider.bindToLifecycle(listOf(topConfig, bottomConfig))
+                primaryCamera = concurrentCamera.cameras.getOrNull(0)
+                secondaryCamera = concurrentCamera.cameras.getOrNull(1)
+
+                Log.d(TAG, "Bound dual concurrent cameras successfully: Top lens $topLens, Bottom lens $bottomLens")
+
+            } else if (isTopCamera && topPreviewView != null) {
+                val topLens = if (topSource is VideoSource.LiveCameraFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
+                val cameraSelector = CameraSelector.Builder().requireLensFacing(topLens).build()
+
+                primaryPreview = Preview.Builder().build().also { it.setSurfaceProvider(topPreviewView.surfaceProvider) }
+                imageCapture = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
+
+                val qualitySelector = QualitySelector.from(Quality.HIGHEST, FallbackStrategy.higherQualityOrLowerThan(Quality.SD))
+                val recorder = Recorder.Builder().setQualitySelector(qualitySelector).build()
+                primaryVideoCapture = VideoCapture.withOutput(recorder)
+
+                primaryCamera = provider.bindToLifecycle(lifecycleOwner, cameraSelector, primaryPreview, imageCapture, primaryVideoCapture)
+
+                if (topLens == CameraSelector.LENS_FACING_BACK) {
+                    primaryCamera?.cameraControl?.enableTorch(_isFlashOn.value)
+                }
+
+            } else if (isBottomCamera && bottomPreviewView != null) {
+                val bottomLens = if (bottomSource is VideoSource.LiveCameraFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
+                val cameraSelector = CameraSelector.Builder().requireLensFacing(bottomLens).build()
+
+                primaryPreview = Preview.Builder().build().also { it.setSurfaceProvider(bottomPreviewView.surfaceProvider) }
+                imageCapture = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
+
+                val qualitySelector = QualitySelector.from(Quality.HIGHEST, FallbackStrategy.higherQualityOrLowerThan(Quality.SD))
+                val recorder = Recorder.Builder().setQualitySelector(qualitySelector).build()
+                primaryVideoCapture = VideoCapture.withOutput(recorder)
+
+                primaryCamera = provider.bindToLifecycle(lifecycleOwner, cameraSelector, primaryPreview, imageCapture, primaryVideoCapture)
+
+                if (bottomLens == CameraSelector.LENS_FACING_BACK) {
+                    primaryCamera?.cameraControl?.enableTorch(_isFlashOn.value)
+                }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Single camera binding failed", e)
+            Log.e(TAG, "Camera sync binding failed", e)
             _errorMessage.value = "Camera binding failed: ${e.localizedMessage}"
         }
     }
 
-    fun bindConcurrentDualCameras(
+    fun startSingleCamera(
         lifecycleOwner: LifecycleOwner,
-        topPreviewView: PreviewView,
-        bottomPreviewView: PreviewView
-    ): Boolean {
-        val provider = cameraProvider ?: run {
-            _errorMessage.value = "Camera provider not ready"
-            return false
-        }
-
-        if (!_isConcurrentCameraSupported.value) {
-            _errorMessage.value = "Concurrent dual camera hardware is not supported on this device. Please select a Gallery Video for one section."
-            return false
-        }
-
-        try {
-            provider.unbindAll()
-
-            // Front camera configuration
-            val frontSelector = CameraSelector.Builder()
-                .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
-                .build()
-
-            primaryPreview = Preview.Builder().build().also {
-                it.setSurfaceProvider(topPreviewView.surfaceProvider)
-            }
-
-            val qualitySelector = QualitySelector.from(
-                Quality.SD,
-                FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
-            )
-
-            val primaryRecorder = Recorder.Builder().setQualitySelector(qualitySelector).build()
-            primaryVideoCapture = VideoCapture.withOutput(primaryRecorder)
-
-            val primaryGroup = UseCaseGroup.Builder()
-                .addUseCase(primaryPreview!!)
-                .addUseCase(primaryVideoCapture!!)
-                .build()
-
-            val primaryConfig = SingleCameraConfig(
-                frontSelector,
-                primaryGroup,
-                lifecycleOwner
-            )
-
-            // Rear camera configuration
-            val rearSelector = CameraSelector.Builder()
-                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                .build()
-
-            secondaryPreview = Preview.Builder().build().also {
-                it.setSurfaceProvider(bottomPreviewView.surfaceProvider)
-            }
-
-            val secondaryRecorder = Recorder.Builder().setQualitySelector(qualitySelector).build()
-            secondaryVideoCapture = VideoCapture.withOutput(secondaryRecorder)
-
-            val secondaryGroup = UseCaseGroup.Builder()
-                .addUseCase(secondaryPreview!!)
-                .addUseCase(secondaryVideoCapture!!)
-                .build()
-
-            val secondaryConfig = SingleCameraConfig(
-                rearSelector,
-                secondaryGroup,
-                lifecycleOwner
-            )
-
-            val concurrentCamera: ConcurrentCamera = provider.bindToLifecycle(
-                listOf(primaryConfig, secondaryConfig)
-            )
-
-            primaryCamera = concurrentCamera.cameras.getOrNull(0)
-            secondaryCamera = concurrentCamera.cameras.getOrNull(1)
-
-            Log.d(TAG, "Concurrent dual cameras bound successfully!")
-            return true
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Concurrent camera binding failed", e)
-            _errorMessage.value = "Concurrent dual camera failed: ${e.localizedMessage}. Falling back to single camera."
-            return false
-        }
+        previewView: PreviewView,
+        targetLensFacing: Int = CameraSelector.LENS_FACING_BACK
+    ) {
+        val source = if (targetLensFacing == CameraSelector.LENS_FACING_FRONT) VideoSource.LiveCameraFront else VideoSource.LiveCameraRear
+        syncCameraSources(lifecycleOwner, source, VideoSource.None, previewView, null)
     }
 
     fun toggleCameraFacing(
@@ -281,20 +259,11 @@ class CameraCaptureManager(
             _errorMessage.value = "Cannot switch camera while recording"
             return
         }
-        _lensFacing.value = if (_lensFacing.value == CameraSelector.LENS_FACING_BACK) {
-            CameraSelector.LENS_FACING_FRONT
-        } else {
-            CameraSelector.LENS_FACING_BACK
-        }
         _isFlashOn.value = false
-        bindSingleCameraUseCases(lifecycleOwner, previewView)
+        startSingleCamera(lifecycleOwner, previewView, CameraSelector.LENS_FACING_FRONT)
     }
 
     fun toggleFlash() {
-        if (_lensFacing.value != CameraSelector.LENS_FACING_BACK) {
-            _errorMessage.value = "Flash is only available for rear camera"
-            return
-        }
         val newState = !_isFlashOn.value
         _isFlashOn.value = newState
         primaryCamera?.cameraControl?.enableTorch(newState)
@@ -347,15 +316,12 @@ class CameraCaptureManager(
         )
     }
 
-    private var primaryRecording: Recording? = null
-    private var secondaryRecording: Recording? = null
-
     fun startVideoRecording(
         onSuccess: (primaryUri: Uri, secondaryUri: Uri?) -> Unit,
         onError: (String) -> Unit
     ) {
         val primaryCapture = primaryVideoCapture ?: run {
-            onError("Primary video recorder is not ready")
+            onError("Camera video recorder is not ready")
             return
         }
 
@@ -395,7 +361,6 @@ class CameraCaptureManager(
         ) == PackageManager.PERMISSION_GRANTED &&
                 context.packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE)
 
-        // Start Primary Camera Recording
         var primaryPrep = primaryCapture.output.prepareRecording(context, FileOutputOptions.Builder(primaryFile).build())
         if (hasAudio) {
             try { primaryPrep = primaryPrep.withAudioEnabled() } catch (_: Exception) {}
@@ -421,10 +386,9 @@ class CameraCaptureManager(
                 }
             }
 
-            // Start Secondary Camera Recording if present (Concurrent mode)
             val secondaryCapture = secondaryVideoCapture
             if (secondaryCapture != null) {
-                var secondaryPrep = secondaryCapture.output.prepareRecording(context, FileOutputOptions.Builder(secondaryFile).build())
+                val secondaryPrep = secondaryCapture.output.prepareRecording(context, FileOutputOptions.Builder(secondaryFile).build())
                 secondaryRecording = secondaryPrep.start(ContextCompat.getMainExecutor(context)) { event ->
                     when (event) {
                         is VideoRecordEvent.Finalize -> {

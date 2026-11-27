@@ -8,6 +8,8 @@ import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import androidx.camera.view.PreviewView
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.widget.Toast
@@ -102,6 +104,7 @@ import java.util.Locale
 @Composable
 fun MainScreen() {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -112,6 +115,32 @@ fun MainScreen() {
 
     // Dual Video Composition Configuration
     var config by remember { mutableStateOf(DualVideoCompositionConfig()) }
+
+    // PreviewView instances for top and bottom viewports
+    val topPreviewView = remember {
+        PreviewView(context).apply {
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+        }
+    }
+
+    val bottomPreviewView = remember {
+        PreviewView(context).apply {
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+        }
+    }
+
+    // Central Camera Source Coordinator Effect
+    LaunchedEffect(config.topState.source, config.bottomState.source, lifecycleOwner) {
+        cameraCaptureManager.syncCameraSources(
+            lifecycleOwner = lifecycleOwner,
+            topSource = config.topState.source,
+            bottomSource = config.bottomState.source,
+            topPreviewView = topPreviewView,
+            bottomPreviewView = bottomPreviewView
+        )
+    }
 
     // Gallery media selection state (for picking video into top or bottom section)
     var targetSectionForPicker by remember { mutableStateOf<String?>(null) } // "TOP" or "BOTTOM"
@@ -177,7 +206,6 @@ fun MainScreen() {
     // Observing States
     val isCameraRecording by cameraCaptureManager.isRecording.collectAsState()
     val recordingDurationSeconds by cameraCaptureManager.recordingDurationSeconds.collectAsState()
-    val lensFacing by cameraCaptureManager.lensFacing.collectAsState()
     val cameraError by cameraCaptureManager.errorMessage.collectAsState()
 
     val isExportingComposition by dualVideoComposer.isExporting.collectAsState()
@@ -340,7 +368,7 @@ fun MainScreen() {
                                     InteractiveVideoViewport(
                                         title = "TOP",
                                         state = config.topState,
-                                        cameraCaptureManager = cameraCaptureManager,
+                                        previewView = topPreviewView,
                                         isRecording = isCameraRecording || isExportingComposition,
                                         onStateChange = { newState -> config = config.copy(topState = newState) },
                                         onSelectGalleryMediaClick = {
@@ -372,7 +400,7 @@ fun MainScreen() {
                                     InteractiveVideoViewport(
                                         title = "BOTTOM",
                                         state = config.bottomState,
-                                        cameraCaptureManager = cameraCaptureManager,
+                                        previewView = bottomPreviewView,
                                         isRecording = isCameraRecording || isExportingComposition,
                                         onStateChange = { newState -> config = config.copy(bottomState = newState) },
                                         onSelectGalleryMediaClick = {

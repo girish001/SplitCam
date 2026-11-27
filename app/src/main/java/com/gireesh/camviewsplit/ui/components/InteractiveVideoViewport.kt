@@ -74,7 +74,7 @@ import com.gireesh.camviewsplit.ui.theme.TealAccent
 fun InteractiveVideoViewport(
     title: String,
     state: VideoSectionState,
-    cameraCaptureManager: CameraCaptureManager,
+    previewView: PreviewView,
     isRecording: Boolean,
     onStateChange: (VideoSectionState) -> Unit,
     onSelectGalleryMediaClick: () -> Unit,
@@ -82,28 +82,12 @@ fun InteractiveVideoViewport(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    // Camera preview view
-    val previewView = remember {
-        PreviewView(context).apply {
-            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-            scaleType = PreviewView.ScaleType.FILL_CENTER
-        }
-    }
 
     // ExoPlayer for imported gallery videos
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
 
     val isCameraSource = state.source is VideoSource.LiveCameraFront || state.source is VideoSource.LiveCameraRear
     val isGallerySource = state.source is VideoSource.GalleryVideo
-
-    LaunchedEffect(isCameraSource, lifecycleOwner) {
-        if (isCameraSource) {
-            val lensFacing = if (state.source is VideoSource.LiveCameraFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
-            cameraCaptureManager.startSingleCamera(lifecycleOwner, previewView, lensFacing)
-        }
-    }
 
     // Manage ExoPlayer lifecycle when source is GalleryVideo
     DisposableEffect(state.source) {

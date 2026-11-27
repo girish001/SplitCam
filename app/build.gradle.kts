@@ -28,6 +28,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
+    }
     buildFeatures {
         compose = true
     }
@@ -64,6 +70,7 @@ dependencies {
     implementation(libs.coil.video)
 
     testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
