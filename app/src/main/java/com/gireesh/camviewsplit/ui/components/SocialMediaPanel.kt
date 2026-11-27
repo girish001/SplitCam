@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -26,6 +28,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -44,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.gireesh.camviewsplit.model.ContentScaleMode
+import com.gireesh.camviewsplit.model.DualVideoCompositionConfig
 import com.gireesh.camviewsplit.ui.theme.CyanPrimary
 import com.gireesh.camviewsplit.ui.theme.DarkBorder
 import com.gireesh.camviewsplit.ui.theme.DarkSurface
@@ -66,6 +71,7 @@ data class SocialPreset(
 @Composable
 fun SocialMediaPanel(
     exportedVideoUri: Uri?,
+    config: DualVideoCompositionConfig,
     onExportWithDimensions: (width: Int, height: Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -286,6 +292,70 @@ fun SocialMediaPanel(
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.padding(top = 4.dp)
                     )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Real Output Aspect Ratio Preview Box
+        Text(text = "Output Framing Preview:", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(160.dp)
+                .background(Color.Black, RoundedCornerShape(12.dp))
+                .border(1.dp, TealAccent.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            val targetAspect = validationResult.width.toFloat() / validationResult.height.coerceAtLeast(1).toFloat()
+
+            Box(
+                modifier = Modifier
+                    .aspectRatio(targetAspect, matchHeightConstraintsFirst = true)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(DarkSurfaceElevated)
+                    .border(1.dp, CyanPrimary, RoundedCornerShape(8.dp))
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Top Section Preview in Target Frame
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(config.splitRatio.coerceIn(0.15f, 0.85f))
+                            .background(CyanPrimary.copy(alpha = 0.25f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "TOP [${if (config.topState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",
+                            color = CyanPrimary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // Divider Line
+                    if (config.showDivider) {
+                        HorizontalDivider(thickness = 2.dp, color = CyanPrimary)
+                    }
+
+                    // Bottom Section Preview in Target Frame
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight((1.0f - config.splitRatio).coerceIn(0.15f, 0.85f))
+                            .background(TealAccent.copy(alpha = 0.25f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "BOTTOM [${if (config.bottomState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",
+                            color = TealAccent,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

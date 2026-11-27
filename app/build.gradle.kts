@@ -41,26 +41,17 @@ android {
             val keyPassword = localProperties.getProperty("KEY_PASSWORD")
                 ?: System.getenv("KEY_PASSWORD")
 
-            val gradleTasks = gradle.startParameter.taskNames.joinToString(" ")
-            val isReleaseTask = gradleTasks.contains("Release", ignoreCase = true)
-
             if (keystoreFile != null && File(keystoreFile).exists()) {
                 storeFile = File(keystoreFile)
                 storePassword = keystorePassword
                 this.keyAlias = keyAlias
                 this.keyPassword = keyPassword
-            } else if (isReleaseTask) {
-                throw GradleException(
-                    "Release build requires valid signing credentials! " +
-                    "Please define KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD " +
-                    "in your local.properties or as environment variables."
-                )
             } else {
-                val debugSigning = signingConfigs.getByName("debug")
-                storeFile = debugSigning.storeFile
-                storePassword = debugSigning.storePassword
-                this.keyAlias = debugSigning.keyAlias
-                this.keyPassword = debugSigning.keyPassword
+                // Release build requires a valid release keystore. Pointing to a missing file causes release builds to fail.
+                storeFile = rootProject.file("missing_release_keystore.jks")
+                storePassword = "invalid_password"
+                this.keyAlias = "invalid_alias"
+                this.keyPassword = "invalid_password"
             }
         }
     }

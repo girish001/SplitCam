@@ -7,6 +7,7 @@ import com.gireesh.camviewsplit.util.ResolutionValidator
 import com.gireesh.camviewsplit.util.SocialPlatform
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -54,6 +55,40 @@ class SourceRoutingTest {
 
         assertFalse(isCameraSource(config.topState.source))
         assertFalse(isCameraSource(config.bottomState.source))
+    }
+
+    @Test
+    fun testCameraAndCameraURIMapping() {
+        val top = VideoSectionState(source = VideoSource.LiveCameraFront)
+        val bottom = VideoSectionState(source = VideoSource.LiveCameraRear)
+        val config = DualVideoCompositionConfig(topState = top, bottomState = bottom)
+
+        val isTopCam = isCameraSource(config.topState.source)
+        val isBottomCam = isCameraSource(config.bottomState.source)
+
+        val primaryCamUri = "file:///cache/primary.mp4"
+        val secondaryCamUri = "file:///cache/secondary.mp4"
+
+        val topUri = if (isTopCam) primaryCamUri else null
+        val bottomUri = if (isBottomCam) secondaryCamUri else null
+
+        assertEquals("file:///cache/primary.mp4", topUri)
+        assertEquals("file:///cache/secondary.mp4", bottomUri)
+    }
+
+    @Test
+    fun testMissingCameraRecordingURIMapping() {
+        val top = VideoSectionState(source = VideoSource.LiveCameraFront)
+        val bottom = VideoSectionState(source = VideoSource.None)
+        val config = DualVideoCompositionConfig(topState = top, bottomState = bottom)
+
+        val isTopCam = isCameraSource(config.topState.source)
+
+        val primaryCamUri: String? = null
+
+        val topUri = if (isTopCam) primaryCamUri else null
+
+        assertNull(topUri)
     }
 
     @Test

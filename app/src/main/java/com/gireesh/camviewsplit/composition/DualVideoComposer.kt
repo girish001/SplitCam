@@ -18,6 +18,7 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import com.gireesh.camviewsplit.model.ContentScaleMode
 import com.gireesh.camviewsplit.model.DualVideoCompositionConfig
 import com.gireesh.camviewsplit.model.VideoSource
 import kotlinx.coroutines.CoroutineScope
@@ -91,9 +92,10 @@ class DualVideoComposer(
 
                 val topMatrixTransform = MatrixTransformation { _ ->
                     val matrix = android.graphics.Matrix()
-                    val zoom = topState.zoomScale.coerceAtLeast(0.1f)
-                    val panX = (topState.panOffset.x / 500f).coerceIn(-1.5f, 1.5f)
-                    val panY = (-topState.panOffset.y / 500f).coerceIn(-1.5f, 1.5f)
+                    val fitScaleMultiplier = if (topState.contentScaleMode == ContentScaleMode.FIT) 0.85f else 1.0f
+                    val zoom = (topState.zoomScale * fitScaleMultiplier).coerceAtLeast(0.1f)
+                    val panX = (topState.panOffset.x / 360f).coerceIn(-1.0f, 1.0f)
+                    val panY = (-topState.panOffset.y / 640f).coerceIn(-1.0f, 1.0f)
 
                     matrix.postScale(zoom, zoom * splitRatio)
                     matrix.postTranslate(panX, (1.0f - splitRatio) + panY)
@@ -126,9 +128,10 @@ class DualVideoComposer(
 
                 val bottomMatrixTransform = MatrixTransformation { _ ->
                     val matrix = android.graphics.Matrix()
-                    val zoom = bottomState.zoomScale.coerceAtLeast(0.1f)
-                    val panX = (bottomState.panOffset.x / 500f).coerceIn(-1.5f, 1.5f)
-                    val panY = (-bottomState.panOffset.y / 500f).coerceIn(-1.5f, 1.5f)
+                    val fitScaleMultiplier = if (bottomState.contentScaleMode == ContentScaleMode.FIT) 0.85f else 1.0f
+                    val zoom = (bottomState.zoomScale * fitScaleMultiplier).coerceAtLeast(0.1f)
+                    val panX = (bottomState.panOffset.x / 360f).coerceIn(-1.0f, 1.0f)
+                    val panY = (-bottomState.panOffset.y / 640f).coerceIn(-1.0f, 1.0f)
 
                     matrix.postScale(zoom, zoom * (1.0f - splitRatio))
                     matrix.postTranslate(panX, -splitRatio + panY)

@@ -117,6 +117,9 @@ fun MainScreen() {
     // Dual Video Composition Configuration
     var config by remember { mutableStateOf(DualVideoCompositionConfig()) }
 
+    // Session Camera Recordings State (stores latest primary & secondary camera recordings)
+    var sessionCameraRecordings by remember { mutableStateOf<Pair<Uri, Uri?>?>(null) }
+
     // PreviewView instances for top and bottom viewports
     val topPreviewView = remember {
         PreviewView(context).apply {
@@ -525,6 +528,7 @@ fun MainScreen() {
                                                 // Combinations 1, 2, 3: Live Camera(s) + Optional Gallery Video
                                                 cameraCaptureManager.startVideoRecording(
                                                     onSuccess = { primaryCameraUri, secondaryCameraUri ->
+                                                        sessionCameraRecordings = Pair(primaryCameraUri, secondaryCameraUri)
                                                         scope.launch {
                                                             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
                                                             val cleanFileName = "SplitCam_CLEAN_$timestamp.mp4"
@@ -540,7 +544,6 @@ fun MainScreen() {
                                                                 config = config,
                                                                 outputFile = cleanOutputFile,
                                                                 onSuccess = { exportedFile ->
-                                                                    cleanupTempCameraFiles(primaryCameraUri, secondaryCameraUri)
                                                                     scope.launch(Dispatchers.IO) {
                                                                         val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
                                                                         val newItem = mediaRepository.addCapturedMedia(
@@ -555,7 +558,6 @@ fun MainScreen() {
                                                                     }
                                                                 },
                                                                 onError = { err ->
-                                                                    cleanupTempCameraFiles(primaryCameraUri, secondaryCameraUri)
                                                                     scope.launch { snackbarHostState.showSnackbar("Export error: $err") }
                                                                 }
                                                             )
@@ -620,19 +622,29 @@ fun MainScreen() {
                         if (!isCameraRecording && !isExportingComposition) {
                             SocialMediaPanel(
                                 exportedVideoUri = selectedVideo?.uri,
+                                config = config,
                                 onExportWithDimensions = { customWidth, customHeight ->
                                     val isTopCamera = config.topState.source is VideoSource.LiveCameraFront || config.topState.source is VideoSource.LiveCameraRear
                                     val isBottomCamera = config.bottomState.source is VideoSource.LiveCameraFront || config.bottomState.source is VideoSource.LiveCameraRear
 
-                                    val topGalleryUri = (config.topState.source as? VideoSource.GalleryVideo)?.uri ?: selectedVideo?.uri
-                                    val bottomGalleryUri = (config.bottomState.source as? VideoSource.GalleryVideo)?.uri
+                                    val topUri = if (isTopCamera) {
+                                        sessionCameraRecordings?.first
+                                    } else {
+                                        (config.topState.source as? VideoSource.GalleryVideo)?.uri
+                                    }
 
-                                    if ((isTopCamera || isBottomCamera) && selectedVideo == null && topGalleryUri == null && bottomGalleryUri == null) {
-                                        scope.launch { snackbarHostState.showSnackbar("Please record live camera video first or select gallery media.") }
+                                    val bottomUri = if (isBottomCamera) {
+                                        if (isTopCamera) sessionCameraRecordings?.second else sessionCameraRecordings?.first
+                                    } else {
+                                        (config.bottomState.source as? VideoSource.GalleryVideo)?.uri
+                                    }
+
+                                    if ((isTopCamera && topUri == null) || (isBottomCamera && bottomUri == null)) {
+                                        scope.launch { snackbarHostState.showSnackbar("Please record live camera video using the Record button first before exporting.") }
                                         return@SocialMediaPanel
                                     }
 
-                                    if (topGalleryUri == null && bottomGalleryUri == null) {
+                                    if (topUri == null && bottomUri == null) {
                                         scope.launch { snackbarHostState.showSnackbar("Please select video sources or record a video first.") }
                                         return@SocialMediaPanel
                                     }
@@ -644,8 +656,8 @@ fun MainScreen() {
                                         val cleanOutputFile = File(moviesDir, cleanFileName)
 
                                         dualVideoComposer.exportComposition(
-                                            topVideoUri = topGalleryUri,
-                                            bottomVideoUri = bottomGalleryUri,
+                                            topVideoUri = topUri,
+                                            bottomVideoUri = bottomUri,
                                             config = config,
                                             outputFile = cleanOutputFile,
                                             outputWidth = customWidth,
