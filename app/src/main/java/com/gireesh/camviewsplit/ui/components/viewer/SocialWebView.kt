@@ -230,15 +230,25 @@ fun SocialWebView(
                                     isUserGesture: Boolean,
                                     resultMsg: Message?
                                 ): Boolean {
-                                    val href = view?.handler?.obtainMessage()
-                                    view?.requestFocusNodeHref(href)
-                                    val url = href?.data?.getString("url")
-                                    if (!url.isNullOrEmpty()) {
-                                        try {
-                                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                        } catch (_: Exception) {}
+                                    val tempWebView = WebView(ctx).apply {
+                                        settings.javaScriptEnabled = true
+                                        webViewClient = object : WebViewClient() {
+                                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                                val targetUrl = request?.url?.toString()
+                                                if (!targetUrl.isNullOrEmpty()) {
+                                                    try {
+                                                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)))
+                                                    } catch (_: Exception) {}
+                                                }
+                                                destroy()
+                                                return true
+                                            }
+                                        }
                                     }
-                                    return false
+                                    val transport = resultMsg?.obj as? WebView.WebViewTransport
+                                    transport?.webView = tempWebView
+                                    resultMsg?.sendToTarget()
+                                    return true
                                 }
                             }
 

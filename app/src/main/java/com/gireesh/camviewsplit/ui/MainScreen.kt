@@ -785,25 +785,66 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
         return null
     }
 
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        try {
+            val publicMoviesDir = File(
+                android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES),
+                "SplitCam"
+            ).apply { if (!exists()) mkdirs() }
+            val publicFile = File(publicMoviesDir, displayName)
+
+            val bytesCopied = sourceFile.inputStream().use { input ->
+                publicFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            if (bytesCopied != sourceLength || !publicFile.exists() || publicFile.length() <= 0L) {
+                android.util.Log.e("MainScreen", "saveVideoToPublicGallery (<API29): bytesCopied ($bytesCopied) != sourceLength ($sourceLength).")
+                if (publicFile.exists()) publicFile.delete()
+                return null
+            }
+
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                put(MediaStore.MediaColumns.DATA, publicFile.absolutePath)
+            }
+
+            val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(publicFile.absolutePath),
+                arrayOf("video/mp4"),
+                null
+            )
+
+            return uri ?: Uri.fromFile(publicFile)
+        } catch (e: Exception) {
+            android.util.Log.e("MainScreen", "saveVideoToPublicGallery (<API29) failed: ${e.localizedMessage}", e)
+            return null
+        }
+    }
+
+    // Android 10+ (API 29+) IS_PENDING Workflow
     val contentValues = ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
         put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/SplitCam/")
-            put(MediaStore.Video.Media.IS_PENDING, 1)
-        }
+        put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/SplitCam/")
+        put(MediaStore.Video.Media.IS_PENDING, 1)
     }
 
     val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
     if (uri == null) {
-        android.util.Log.e("MainScreen", "saveVideoToPublicGallery: MediaStore insert returned null.")
+        android.util.Log.e("MainScreen", "saveVideoToPublicGallery (API29+): MediaStore insert returned null.")
         return null
     }
 
     var bytesCopied = 0L
     try {
         val outputStream = context.contentResolver.openOutputStream(uri) ?: run {
-            android.util.Log.e("MainScreen", "saveVideoToPublicGallery: openOutputStream returned null.")
+            android.util.Log.e("MainScreen", "saveVideoToPublicGallery (API29+): openOutputStream returned null.")
             context.contentResolver.delete(uri, null, null)
             return null
         }
@@ -815,32 +856,23 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
         }
 
         if (bytesCopied != sourceLength) {
-            android.util.Log.e("MainScreen", "saveVideoToPublicGallery: bytesCopied ($bytesCopied) != sourceLength ($sourceLength).")
+            android.util.Log.e("MainScreen", "saveVideoToPublicGallery (API29+): bytesCopied ($bytesCopied) != sourceLength ($sourceLength).")
             context.contentResolver.delete(uri, null, null)
             return null
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            contentValues.clear()
-            contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
-            val updatedRows = context.contentResolver.update(uri, contentValues, null, null)
-            if (updatedRows <= 0) {
-                android.util.Log.e("MainScreen", "saveVideoToPublicGallery: IS_PENDING update returned 0 rows.")
-                context.contentResolver.delete(uri, null, null)
-                return null
-            }
-        } else {
-            MediaScannerConnection.scanFile(
-                context,
-                arrayOf(sourceFile.absolutePath),
-                arrayOf("video/mp4"),
-                null
-            )
+        contentValues.clear()
+        contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
+        val updatedRows = context.contentResolver.update(uri, contentValues, null, null)
+        if (updatedRows <= 0) {
+            android.util.Log.e("MainScreen", "saveVideoToPublicGallery (API29+): IS_PENDING update returned 0 rows.")
+            context.contentResolver.delete(uri, null, null)
+            return null
         }
 
         return uri
     } catch (e: Exception) {
-        android.util.Log.e("MainScreen", "saveVideoToPublicGallery failed: ${e.localizedMessage}", e)
+        android.util.Log.e("MainScreen", "saveVideoToPublicGallery (API29+) failed: ${e.localizedMessage}", e)
         try {
             context.contentResolver.delete(uri, null, null)
         } catch (_: Exception) {}
