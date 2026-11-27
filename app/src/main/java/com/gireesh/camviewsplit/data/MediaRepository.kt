@@ -22,7 +22,8 @@ import java.io.FileOutputStream
 
 sealed class DeleteResult {
     object Success : DeleteResult()
-    data class PermissionRequired(val intentSender: IntentSender) : DeleteResult()
+    data class PermissionRequiredApi29(val intentSender: IntentSender) : DeleteResult()
+    data class PermissionRequiredApi30(val intentSender: IntentSender) : DeleteResult()
     object Failed : DeleteResult()
 }
 
@@ -204,7 +205,7 @@ class MediaRepository(private val context: Context) {
     }
 
     suspend fun deleteMediaItem(item: MediaItem): Boolean = withContext(Dispatchers.IO) {
-        when (val res = deleteMediaItemWithResult(item)) {
+        when (deleteMediaItemWithResult(item)) {
             is DeleteResult.Success -> true
             else -> false
         }
@@ -248,12 +249,12 @@ class MediaRepository(private val context: Context) {
             } catch (e: Exception) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     if (e is RecoverableSecurityException) {
-                        return@withContext DeleteResult.PermissionRequired(e.userAction.actionIntent.intentSender)
+                        return@withContext DeleteResult.PermissionRequiredApi29(e.userAction.actionIntent.intentSender)
                     }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         try {
                             val pi = MediaStore.createDeleteRequest(context.contentResolver, listOf(uri))
-                            return@withContext DeleteResult.PermissionRequired(pi.intentSender)
+                            return@withContext DeleteResult.PermissionRequiredApi30(pi.intentSender)
                         } catch (_: Exception) {}
                     }
                 }
@@ -263,13 +264,28 @@ class MediaRepository(private val context: Context) {
         DeleteResult.Failed
     }
 
-    suspend fun confirmMediaStoreDeletion(item: MediaItem): Boolean = withContext(Dispatchers.IO) {
+    suspend fun confirmApi29Deletion(item: MediaItem): Boolean = withContext(Dispatchers.IO) {
         val rows = try {
             context.contentResolver.delete(item.uri, null, null)
         } catch (_: Exception) {
             0
         }
         if (rows > 0) {
+            removeFromRepositoryState(item)
+            true
+        } else {
+            false
+        }
+    }
+
+    suspend fun confirmApi30Deletion(item: MediaItem): Boolean = withContext(Dispatchers.IO) {
+        val isStillPresent = try {
+            context.contentResolver.openFileDescriptor(item.uri, "r")?.use { true } ?: false
+        } catch (_: Exception) {
+            false
+        }
+
+        if (!isStillPresent) {
             removeFromRepositoryState(item)
             true
         } else {

@@ -305,6 +305,7 @@ fun MainScreen() {
 
     // Pending Delete Consent State
     var pendingDeleteItem by remember { mutableStateOf<MediaItem?>(null) }
+    var isApi30ConsentFlow by remember { mutableStateOf(false) }
 
     val deleteConsentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult(),
@@ -312,7 +313,11 @@ fun MainScreen() {
             val item = pendingDeleteItem
             if (result.resultCode == android.app.Activity.RESULT_OK && item != null) {
                 scope.launch {
-                    val confirmed = mediaRepository.confirmMediaStoreDeletion(item)
+                    val confirmed = if (isApi30ConsentFlow) {
+                        mediaRepository.confirmApi30Deletion(item)
+                    } else {
+                        mediaRepository.confirmApi29Deletion(item)
+                    }
                     if (confirmed) {
                         if (selectedVideo?.id == item.id) selectedVideo = null
                         if (selectedPhoto?.id == item.id) selectedPhoto = null
@@ -327,6 +332,7 @@ fun MainScreen() {
                 }
             }
             pendingDeleteItem = null
+            isApi30ConsentFlow = false
         }
     )
 
@@ -464,8 +470,16 @@ fun MainScreen() {
                                                             selectedVideo = null
                                                             snackbarHostState.showSnackbar("Video deleted")
                                                         }
-                                                        is DeleteResult.PermissionRequired -> {
+                                                        is DeleteResult.PermissionRequiredApi29 -> {
                                                             pendingDeleteItem = item
+                                                            isApi30ConsentFlow = false
+                                                            deleteConsentLauncher.launch(
+                                                                IntentSenderRequest.Builder(res.intentSender).build()
+                                                            )
+                                                        }
+                                                        is DeleteResult.PermissionRequiredApi30 -> {
+                                                            pendingDeleteItem = item
+                                                            isApi30ConsentFlow = true
                                                             deleteConsentLauncher.launch(
                                                                 IntentSenderRequest.Builder(res.intentSender).build()
                                                             )
@@ -497,8 +511,16 @@ fun MainScreen() {
                                                             selectedPhoto = null
                                                             snackbarHostState.showSnackbar("Photo deleted")
                                                         }
-                                                        is DeleteResult.PermissionRequired -> {
+                                                        is DeleteResult.PermissionRequiredApi29 -> {
                                                             pendingDeleteItem = item
+                                                            isApi30ConsentFlow = false
+                                                            deleteConsentLauncher.launch(
+                                                                IntentSenderRequest.Builder(res.intentSender).build()
+                                                            )
+                                                        }
+                                                        is DeleteResult.PermissionRequiredApi30 -> {
+                                                            pendingDeleteItem = item
+                                                            isApi30ConsentFlow = true
                                                             deleteConsentLauncher.launch(
                                                                 IntentSenderRequest.Builder(res.intentSender).build()
                                                             )
