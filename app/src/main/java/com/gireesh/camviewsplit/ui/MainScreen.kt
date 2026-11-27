@@ -786,6 +786,17 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
     }
 
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        // Android 8/9 (API 26-28): Runtime storage permission check
+        val writePermissionGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!writePermissionGranted) {
+            android.util.Log.e("MainScreen", "saveVideoToPublicGallery (<API29): WRITE_EXTERNAL_STORAGE permission denied.")
+            return null
+        }
+
         try {
             val publicMoviesDir = File(
                 android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES),
@@ -799,7 +810,7 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
                 }
             }
 
-            if (bytesCopied != sourceLength || !publicFile.exists() || publicFile.length() <= 0L) {
+            if (bytesCopied != sourceLength || !publicFile.exists() || publicFile.length() != sourceLength) {
                 android.util.Log.e("MainScreen", "saveVideoToPublicGallery (<API29): bytesCopied ($bytesCopied) != sourceLength ($sourceLength).")
                 if (publicFile.exists()) publicFile.delete()
                 return null
@@ -811,28 +822,46 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
                 put(MediaStore.MediaColumns.DATA, publicFile.absolutePath)
             }
 
-            var resultUri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+            var resultUri: Uri? = null
+            try {
+                resultUri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+            } catch (e: Exception) {
+                android.util.Log.e("MainScreen", "saveVideoToPublicGallery (<API29): insert failed: ${e.localizedMessage}")
+            }
 
             if (resultUri == null) {
+                val latch = java.util.concurrent.CountDownLatch(1)
                 MediaScannerConnection.scanFile(
                     context,
                     arrayOf(publicFile.absolutePath),
                     arrayOf("video/mp4")
                 ) { _, uri ->
-                    if (uri != null) {
+                    if (uri != null && uri.scheme == "content") {
                         resultUri = uri
                     }
+                    latch.countDown()
                 }
-            } else {
-                MediaScannerConnection.scanFile(
-                    context,
-                    arrayOf(publicFile.absolutePath),
-                    arrayOf("video/mp4"),
-                    null
-                )
+                try {
+                    latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
+                } catch (_: Exception) {}
             }
 
-            return resultUri ?: Uri.fromFile(publicFile)
+            // Verify final URI is a valid content:// URI
+            if (resultUri != null && resultUri?.scheme == "content") {
+                val pfd = try { context.contentResolver.openFileDescriptor(resultUri!!, "r") } catch (_: Exception) { null }
+                if (pfd != null) {
+                    pfd.close()
+                    return resultUri
+                }
+            }
+
+            if (resultUri != null && resultUri?.scheme == "content") {
+                return resultUri
+            }
+
+            // Failure path: Clean up file if no valid content:// URI was generated
+            if (publicFile.exists()) publicFile.delete()
+            return null
         } catch (e: Exception) {
             android.util.Log.e("MainScreen", "saveVideoToPublicGallery (<API29) failed: ${e.localizedMessage}", e)
             return null
