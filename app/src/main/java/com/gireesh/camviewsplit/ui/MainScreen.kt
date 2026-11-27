@@ -874,13 +874,14 @@ private suspend fun saveVideoToPublicGallery(context: Context, sourceFile: File,
 
             // Verify final URI is a valid content:// URI that can be opened and has exact matching file size
             if (resultUri != null && resultUri?.scheme == "content") {
-                val pfd = try { context.contentResolver.openFileDescriptor(resultUri!!, "r") } catch (_: Exception) { null }
-                if (pfd != null) {
-                    val savedSize = pfd.statSize
-                    pfd.close()
-                    if (savedSize == sourceLength) {
-                        return@withContext resultUri
-                    }
+                val isValid = try {
+                    context.contentResolver.openFileDescriptor(resultUri!!, "r")?.use { pfd ->
+                        pfd.statSize == sourceLength
+                    } ?: false
+                } catch (_: Exception) { false }
+
+                if (isValid) {
+                    return@withContext resultUri
                 }
             }
 
