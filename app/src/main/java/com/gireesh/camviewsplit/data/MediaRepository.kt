@@ -263,6 +263,20 @@ class MediaRepository(private val context: Context) {
         DeleteResult.Failed
     }
 
+    suspend fun confirmMediaStoreDeletion(item: MediaItem): Boolean = withContext(Dispatchers.IO) {
+        val rows = try {
+            context.contentResolver.delete(item.uri, null, null)
+        } catch (_: Exception) {
+            0
+        }
+        if (rows > 0) {
+            removeFromRepositoryState(item)
+            true
+        } else {
+            false
+        }
+    }
+
     fun removeFromRepositoryState(item: MediaItem) {
         val captured = loadCapturedFromIndex().toMutableList()
         captured.removeAll { it.id == item.id }

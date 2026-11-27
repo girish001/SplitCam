@@ -311,12 +311,14 @@ fun MainScreen() {
         onResult = { result ->
             val item = pendingDeleteItem
             if (result.resultCode == android.app.Activity.RESULT_OK && item != null) {
-                scope.launch(Dispatchers.IO) {
-                    mediaRepository.removeFromRepositoryState(item)
-                    withContext(Dispatchers.Main) {
+                scope.launch {
+                    val confirmed = mediaRepository.confirmMediaStoreDeletion(item)
+                    if (confirmed) {
                         if (selectedVideo?.id == item.id) selectedVideo = null
                         if (selectedPhoto?.id == item.id) selectedPhoto = null
                         snackbarHostState.showSnackbar("Media deleted")
+                    } else {
+                        snackbarHostState.showSnackbar("Could not delete media. Please try again.")
                     }
                 }
             } else {

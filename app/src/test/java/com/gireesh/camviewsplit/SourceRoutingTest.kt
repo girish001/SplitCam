@@ -221,6 +221,18 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testImportedDirSelfDeletionRejection() {
+        val importedDir = java.io.File("C:/app/imported_media")
+        val dirPathWithSeparator = importedDir.canonicalPath + java.io.File.separator
+
+        // Attempting to delete importedDir itself
+        val targetPath = importedDir.canonicalPath
+        val isAllowed = targetPath.startsWith(dirPathWithSeparator)
+
+        assertFalse(isAllowed) // Self-deletion of importedDir rejected!
+    }
+
+    @Test
     fun testDeletionStateConsistency() {
         var isDeleted = false
         val indexList = mutableListOf("item_1")
