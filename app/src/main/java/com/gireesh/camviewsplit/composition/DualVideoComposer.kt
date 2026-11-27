@@ -18,10 +18,10 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
-import com.gireesh.camviewsplit.model.ContentScaleMode
 import com.gireesh.camviewsplit.model.DualVideoCompositionConfig
 import com.gireesh.camviewsplit.model.VideoSource
 import com.gireesh.camviewsplit.util.CompositionTransformEngine
+import com.gireesh.camviewsplit.util.SourceVideoDimensions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @OptIn(UnstableApi::class)
@@ -80,132 +81,144 @@ class DualVideoComposer(
             return
         }
 
-        try {
-            val sequences = mutableListOf<EditedMediaItemSequence>()
+        scope.launch {
+            try {
+                val topDimensions = if (topVideoUri != null) {
+                    CompositionTransformEngine.retrieveMediaDimensionsAsync(context, topVideoUri)
+                } else SourceVideoDimensions()
 
-            // Top Video Sequence
-            if (topVideoUri != null) {
-                val topMediaItem = MediaItem.fromUri(topVideoUri)
-                val topEffectsList = mutableListOf<Effect>()
+                val bottomDimensions = if (bottomVideoUri != null) {
+                    CompositionTransformEngine.retrieveMediaDimensionsAsync(context, bottomVideoUri)
+                } else SourceVideoDimensions()
 
-                val topState = config.topState
-                val splitRatio = config.splitRatio
-                val topDimensions = CompositionTransformEngine.retrieveMediaDimensions(context, topVideoUri)
+                val sequences = mutableListOf<EditedMediaItemSequence>()
 
-                val topMatrixTransform = MatrixTransformation { _ ->
-                    CompositionTransformEngine.calculateExportMatrix(
-                        sectionState = topState,
-                        sectionRatio = splitRatio,
-                        isTopSection = true,
-                        sourceDimensions = topDimensions,
-                        outputWidthPx = outputWidth.toFloat(),
-                        outputHeightPx = outputHeight.toFloat()
-                    )
+                // Top Video Sequence
+                if (topVideoUri != null) {
+                    val topMediaItem = MediaItem.fromUri(topVideoUri)
+                    val topEffectsList = mutableListOf<Effect>()
+
+                    val topState = config.topState
+                    val splitRatio = config.splitRatio
+
+                    val topMatrixTransform = MatrixTransformation { _ ->
+                        CompositionTransformEngine.calculateExportMatrix(
+                            sectionState = topState,
+                            sectionRatio = splitRatio,
+                            isTopSection = true,
+                            sourceDimensions = topDimensions,
+                            outputWidthPx = outputWidth.toFloat(),
+                            outputHeightPx = outputHeight.toFloat()
+                        )
+                    }
+                    topEffectsList.add(topMatrixTransform)
+
+                    val isTopCamera = topState.source is VideoSource.LiveCameraFront || topState.source is VideoSource.LiveCameraRear
+                    val removeTopAudio = if (isTopCamera) {
+                        topState.isMuted || !config.isMicAudioEnabled
+                    } else {
+                        topState.isMuted
+                    }
+
+                    val topEditedItem = EditedMediaItem.Builder(topMediaItem)
+                        .setRemoveAudio(removeTopAudio)
+                        .setEffects(Effects(emptyList(), topEffectsList))
+                        .build()
+
+                    sequences.add(EditedMediaItemSequence.Builder(topEditedItem).build())
                 }
-                topEffectsList.add(topMatrixTransform)
 
-                val isTopCamera = topState.source is VideoSource.LiveCameraFront || topState.source is VideoSource.LiveCameraRear
-                val removeTopAudio = if (isTopCamera) {
-                    topState.isMuted || !config.isMicAudioEnabled
-                } else {
-                    topState.isMuted
+                // Bottom Video Sequence
+                if (bottomVideoUri != null) {
+                    val bottomMediaItem = MediaItem.fromUri(bottomVideoUri)
+                    val bottomEffectsList = mutableListOf<Effect>()
+
+                    val bottomState = config.bottomState
+                    val splitRatio = config.splitRatio
+
+                    val bottomMatrixTransform = MatrixTransformation { _ ->
+                        CompositionTransformEngine.calculateExportMatrix(
+                            sectionState = bottomState,
+                            sectionRatio = 1.0f - splitRatio,
+                            isTopSection = false,
+                            sourceDimensions = bottomDimensions,
+                            outputWidthPx = outputWidth.toFloat(),
+                            outputHeightPx = outputHeight.toFloat()
+                        )
+                    }
+                    bottomEffectsList.add(bottomMatrixTransform)
+
+                    val isBottomCamera = bottomState.source is VideoSource.LiveCameraFront || bottomState.source is VideoSource.LiveCameraRear
+                    val removeBottomAudio = if (isBottomCamera) {
+                        bottomState.isMuted || !config.isMicAudioEnabled
+                    } else {
+                        bottomState.isMuted
+                    }
+
+                    val bottomEditedItem = EditedMediaItem.Builder(bottomMediaItem)
+                        .setRemoveAudio(removeBottomAudio)
+                        .setEffects(Effects(emptyList(), bottomEffectsList))
+                        .build()
+
+                    sequences.add(EditedMediaItemSequence.Builder(bottomEditedItem).build())
                 }
 
-                val topEditedItem = EditedMediaItem.Builder(topMediaItem)
-                    .setRemoveAudio(removeTopAudio)
-                    .setEffects(Effects(emptyList(), topEffectsList))
+                val compositionEffects = listOf<Effect>(
+                    Presentation.createForWidthAndHeight(outputWidth, outputHeight, Presentation.LAYOUT_SCALE_TO_FIT)
+                )
+
+                val composition = Composition.Builder(sequences)
+                    .setEffects(Effects(emptyList(), compositionEffects))
                     .build()
 
-                sequences.add(EditedMediaItemSequence.Builder(topEditedItem).build())
-            }
+                val listener = object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                        _isExporting.value = false
+                        stopProgressTracking()
+                        Log.d(TAG, "Dual video composition exported successfully to ${outputFile.absolutePath}")
+                        scope.launch(Dispatchers.Main) {
+                            onSuccess(outputFile)
+                        }
+                    }
 
-            // Bottom Video Sequence
-            if (bottomVideoUri != null) {
-                val bottomMediaItem = MediaItem.fromUri(bottomVideoUri)
-                val bottomEffectsList = mutableListOf<Effect>()
-
-                val bottomState = config.bottomState
-                val splitRatio = config.splitRatio
-                val bottomDimensions = CompositionTransformEngine.retrieveMediaDimensions(context, bottomVideoUri)
-
-                val bottomMatrixTransform = MatrixTransformation { _ ->
-                    CompositionTransformEngine.calculateExportMatrix(
-                        sectionState = bottomState,
-                        sectionRatio = 1.0f - splitRatio,
-                        isTopSection = false,
-                        sourceDimensions = bottomDimensions,
-                        outputWidthPx = outputWidth.toFloat(),
-                        outputHeightPx = outputHeight.toFloat()
-                    )
-                }
-                bottomEffectsList.add(bottomMatrixTransform)
-
-                val isBottomCamera = bottomState.source is VideoSource.LiveCameraFront || bottomState.source is VideoSource.LiveCameraRear
-                val removeBottomAudio = if (isBottomCamera) {
-                    bottomState.isMuted || !config.isMicAudioEnabled
-                } else {
-                    bottomState.isMuted
-                }
-
-                val bottomEditedItem = EditedMediaItem.Builder(bottomMediaItem)
-                    .setRemoveAudio(removeBottomAudio)
-                    .setEffects(Effects(emptyList(), bottomEffectsList))
-                    .build()
-
-                sequences.add(EditedMediaItemSequence.Builder(bottomEditedItem).build())
-            }
-
-            val compositionEffects = listOf<Effect>(
-                Presentation.createForWidthAndHeight(outputWidth, outputHeight, Presentation.LAYOUT_SCALE_TO_FIT)
-            )
-
-            val composition = Composition.Builder(sequences)
-                .setEffects(Effects(emptyList(), compositionEffects))
-                .build()
-
-            val listener = object : Transformer.Listener {
-                override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    _isExporting.value = false
-                    stopProgressTracking()
-                    Log.d(TAG, "Dual video composition exported successfully to ${outputFile.absolutePath}")
-                    scope.launch(Dispatchers.Main) {
-                        onSuccess(outputFile)
+                    override fun onError(
+                        composition: Composition,
+                        exportResult: ExportResult,
+                        exportException: ExportException
+                    ) {
+                        _isExporting.value = false
+                        stopProgressTracking()
+                        val msg = exportException.localizedMessage ?: "Unknown export error"
+                        Log.e(TAG, "Export failed: $msg", exportException)
+                        _errorMessage.value = msg
+                        scope.launch(Dispatchers.Main) {
+                            onError(msg)
+                        }
                     }
                 }
 
-                override fun onError(
-                    composition: Composition,
-                    exportResult: ExportResult,
-                    exportException: ExportException
-                ) {
-                    _isExporting.value = false
-                    stopProgressTracking()
-                    val msg = exportException.localizedMessage ?: "Unknown export error"
-                    Log.e(TAG, "Export failed: $msg", exportException)
-                    _errorMessage.value = msg
-                    scope.launch(Dispatchers.Main) {
-                        onError(msg)
-                    }
+                val transformer = Transformer.Builder(context)
+                    .setVideoMimeType(MimeTypes.VIDEO_H264)
+                    .addListener(listener)
+                    .build()
+
+                activeTransformer = transformer
+                _isExporting.value = true
+                _exportProgress.value = 0f
+
+                withContext(Dispatchers.Main) {
+                    transformer.start(composition, outputFile.absolutePath)
+                    startProgressTracking(transformer)
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize composition export", e)
+                _isExporting.value = false
+                stopProgressTracking()
+                withContext(Dispatchers.Main) {
+                    onError("Export initialization failed: ${e.localizedMessage}")
                 }
             }
-
-            val transformer = Transformer.Builder(context)
-                .setVideoMimeType(MimeTypes.VIDEO_H264)
-                .addListener(listener)
-                .build()
-
-            activeTransformer = transformer
-            _isExporting.value = true
-            _exportProgress.value = 0f
-
-            transformer.start(composition, outputFile.absolutePath)
-            startProgressTracking(transformer)
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize composition export", e)
-            _isExporting.value = false
-            stopProgressTracking()
-            onError("Export initialization failed: ${e.localizedMessage}")
         }
     }
 

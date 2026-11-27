@@ -64,10 +64,12 @@ import com.gireesh.camviewsplit.ui.theme.DarkSurfaceElevated
 import com.gireesh.camviewsplit.ui.theme.TealAccent
 import com.gireesh.camviewsplit.ui.theme.TextPrimary
 import com.gireesh.camviewsplit.ui.theme.TextSecondary
+import androidx.compose.runtime.LaunchedEffect
 import com.gireesh.camviewsplit.util.CompositionTransformEngine
 import com.gireesh.camviewsplit.util.ResolutionValidator
 import com.gireesh.camviewsplit.util.SocialPlatform
 import com.gireesh.camviewsplit.util.SocialShareHelper
+import com.gireesh.camviewsplit.util.SourceVideoDimensions
 
 data class SocialPreset(
     val label: String,
@@ -316,6 +318,17 @@ fun SocialMediaPanel(
 
         Spacer(modifier = Modifier.height(10.dp))
 
+        var topDims by remember { mutableStateOf(SourceVideoDimensions()) }
+        var bottomDims by remember { mutableStateOf(SourceVideoDimensions()) }
+
+        LaunchedEffect(topMediaUri) {
+            topDims = CompositionTransformEngine.retrieveMediaDimensionsAsync(context, topMediaUri)
+        }
+
+        LaunchedEffect(bottomMediaUri) {
+            bottomDims = CompositionTransformEngine.retrieveMediaDimensionsAsync(context, bottomMediaUri)
+        }
+
         // Real Output Aspect Ratio Preview Box with Actual Media Frames
         Text(text = "Real Output Framing Preview:", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
         Spacer(modifier = Modifier.height(4.dp))
@@ -331,9 +344,6 @@ fun SocialMediaPanel(
             if (validationResult.isValid) {
                 val rawAspect = validationResult.width.toFloat() / validationResult.height.coerceAtLeast(1).toFloat()
                 val safeAspect = if (rawAspect.isFinite() && rawAspect > 0f) rawAspect.coerceIn(0.2f, 5.0f) else 0.5625f
-
-                val topDims = remember(topMediaUri) { CompositionTransformEngine.retrieveMediaDimensions(context, topMediaUri) }
-                val bottomDims = remember(bottomMediaUri) { CompositionTransformEngine.retrieveMediaDimensions(context, bottomMediaUri) }
 
                 val topTransform = CompositionTransformEngine.calculateTransform(
                     sectionState = config.topState,
@@ -366,7 +376,6 @@ fun SocialMediaPanel(
                             contentAlignment = Alignment.Center
                         ) {
                             if (topMediaUri != null) {
-                                val topScale = if (config.topState.contentScaleMode == ContentScaleMode.FILL) ContentScale.Crop else ContentScale.Fit
                                 val topRequest = remember(topMediaUri) {
                                     ImageRequest.Builder(context)
                                         .data(topMediaUri)
@@ -378,7 +387,7 @@ fun SocialMediaPanel(
                                     model = topRequest,
                                     imageLoader = imageLoader,
                                     contentDescription = "Top Section Preview",
-                                    contentScale = topScale,
+                                    contentScale = ContentScale.FillBounds,
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .graphicsLayer(
@@ -412,7 +421,6 @@ fun SocialMediaPanel(
                             contentAlignment = Alignment.Center
                         ) {
                             if (bottomMediaUri != null) {
-                                val bottomScale = if (config.bottomState.contentScaleMode == ContentScaleMode.FILL) ContentScale.Crop else ContentScale.Fit
                                 val bottomRequest = remember(bottomMediaUri) {
                                     ImageRequest.Builder(context)
                                         .data(bottomMediaUri)
@@ -424,7 +432,7 @@ fun SocialMediaPanel(
                                     model = bottomRequest,
                                     imageLoader = imageLoader,
                                     contentDescription = "Bottom Section Preview",
-                                    contentScale = bottomScale,
+                                    contentScale = ContentScale.FillBounds,
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .graphicsLayer(

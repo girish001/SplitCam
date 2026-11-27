@@ -221,6 +221,51 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testPreviewAndExportPanEquivalence() {
+        val sectionState = VideoSectionState(
+            zoomScale = 1.2f,
+            panOffset = androidx.compose.ui.geometry.Offset(108f, -192f)
+        )
+        val dims = SourceVideoDimensions(1080, 1920, 0)
+
+        val previewTransform = CompositionTransformEngine.calculateTransform(
+            sectionState = sectionState,
+            sourceDimensions = dims,
+            viewportWidthPx = 1080f,
+            viewportHeightPx = 960f,
+            interactiveViewportWidthPx = 1080f,
+            interactiveViewportHeightPx = 960f
+        )
+
+        val exportTransform = CompositionTransformEngine.calculateTransform(
+            sectionState = sectionState,
+            sourceDimensions = dims,
+            viewportWidthPx = 1080f,
+            viewportHeightPx = 960f,
+            interactiveViewportWidthPx = 1080f,
+            interactiveViewportHeightPx = 960f
+        )
+
+        assertEquals(previewTransform.scaleX, exportTransform.scaleX, 0.001f)
+        assertEquals(previewTransform.scaleY, exportTransform.scaleY, 0.001f)
+        assertEquals(previewTransform.normPanX, exportTransform.normPanX, 0.001f)
+        assertEquals(previewTransform.normPanY, exportTransform.normPanY, 0.001f)
+    }
+
+    @Test
+    fun testRotationMetadataAndAspectRatios() {
+        val rot0 = SourceVideoDimensions(1920, 1080, 0)
+        val rot90 = SourceVideoDimensions(1920, 1080, 90)
+        val rot180 = SourceVideoDimensions(1920, 1080, 180)
+        val rot270 = SourceVideoDimensions(1920, 1080, 270)
+
+        assertEquals(1.777f, rot0.aspectRatio, 0.01f)
+        assertEquals(0.5625f, rot90.aspectRatio, 0.01f)
+        assertEquals(1.777f, rot180.aspectRatio, 0.01f)
+        assertEquals(0.5625f, rot270.aspectRatio, 0.01f)
+    }
+
+    @Test
     fun testSwapAndResetCompositionConfig() {
         val top = VideoSectionState(source = VideoSource.LiveCameraFront, zoomScale = 2.0f)
         val bottom = VideoSectionState(source = VideoSource.LiveCameraRear, zoomScale = 1.5f)

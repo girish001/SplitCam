@@ -6,11 +6,14 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.gireesh.camviewsplit.model.ContentScaleMode
 import com.gireesh.camviewsplit.model.VideoSectionState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class SourceVideoDimensions(
     val rawWidth: Int = 1080,
     val rawHeight: Int = 1920,
-    val rotationDegrees: Int = 0
+    val rotationDegrees: Int = 0,
+    val isValid: Boolean = true
 ) {
     val effectiveWidth: Float
         get() = if (rotationDegrees == 90 || rotationDegrees == 270) rawHeight.toFloat() else rawWidth.toFloat()
@@ -33,35 +36,44 @@ data class SectionTransformResult(
 
 object CompositionTransformEngine {
 
-    fun retrieveMediaDimensions(context: Context, uri: Uri?): SourceVideoDimensions {
-        if (uri == null) return SourceVideoDimensions(1080, 1920, 0)
-        val retriever = MediaMetadataRetriever()
-        return try {
-            retriever.setDataSource(context, uri)
-            val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-            val hStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-            val rStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+    /**
+     * Asynchronously retrieves video width, height, and rotation metadata on Dispatchers.IO.
+     */
+    suspend fun retrieveMediaDimensionsAsync(context: Context, uri: Uri?): SourceVideoDimensions {
+        if (uri == null) return SourceVideoDimensions(1080, 1920, 0, isValid = false)
 
-            val w = wStr?.toIntOrNull() ?: 1080
-            val h = hStr?.toIntOrNull() ?: 1920
-            val r = rStr?.toIntOrNull() ?: 0
+        return withContext(Dispatchers.IO) {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, uri)
+                val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                val hStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                val rStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
 
-            SourceVideoDimensions(w, h, r)
-        } catch (_: Exception) {
-            SourceVideoDimensions(1080, 1920, 0)
-        } finally {
-            try { retriever.release() } catch (_: Exception) {}
+                val w = wStr?.toIntOrNull() ?: 1080
+                val h = hStr?.toIntOrNull() ?: 1920
+                val r = rStr?.toIntOrNull() ?: 0
+
+                val isValid = wStr != null && hStr != null && w > 0 && h > 0
+                SourceVideoDimensions(w, h, r, isValid = isValid)
+            } catch (_: Exception) {
+                SourceVideoDimensions(1080, 1920, 0, isValid = false)
+            } finally {
+                try { retriever.release() } catch (_: Exception) {}
+            }
         }
     }
 
     /**
-     * Calculates the exact, unified scale and pan parameters for a section.
+     * Calculates unified scale factors and pan coordinates for Compose graphicsLayer and Media3.
      */
     fun calculateTransform(
         sectionState: VideoSectionState,
         sourceDimensions: SourceVideoDimensions,
         viewportWidthPx: Float,
-        viewportHeightPx: Float
+        viewportHeightPx: Float,
+        interactiveViewportWidthPx: Float = 1080f,
+        interactiveViewportHeightPx: Float = 1920f
     ): SectionTransformResult {
         val srcAR = sourceDimensions.aspectRatio
         val secAR = (viewportWidthPx / viewportHeightPx.coerceAtLeast(1f)).coerceIn(0.1f, 10.0f)
@@ -81,19 +93,23 @@ object CompositionTransformEngine {
         val finalScaleX = aspectScaleX * zoom
         val finalScaleY = aspectScaleY * zoom
 
-        val clampedPanX = sectionState.panOffset.x.coerceIn(-viewportWidthPx * 1.5f, viewportWidthPx * 1.5f)
-        val clampedPanY = sectionState.panOffset.y.coerceIn(-viewportHeightPx * 1.5f, viewportHeightPx * 1.5f)
+        // Calculate pan fractions relative to the interactive viewport
+        val panFracX = (sectionState.panOffset.x / interactiveViewportWidthPx.coerceAtLeast(1f)).coerceIn(-1.5f, 1.5f)
+        val panFracY = (sectionState.panOffset.y / interactiveViewportHeightPx.coerceAtLeast(1f)).coerceIn(-1.5f, 1.5f)
 
-        val normPanX = (clampedPanX / viewportWidthPx.coerceAtLeast(1f)) * 2.0f
-        val normPanY = (-clampedPanY / viewportHeightPx.coerceAtLeast(1f)) * 2.0f
+        val composePanX = panFracX * viewportWidthPx
+        val composePanY = panFracY * viewportHeightPx
+
+        val normPanX = panFracX * 2.0f
+        val normPanY = -panFracY * 2.0f
 
         return SectionTransformResult(
             scaleX = finalScaleX,
             scaleY = finalScaleY,
             normPanX = normPanX.coerceIn(-2.0f, 2.0f),
             normPanY = normPanY.coerceIn(-2.0f, 2.0f),
-            composePanX = clampedPanX,
-            composePanY = clampedPanY
+            composePanX = composePanX,
+            composePanY = composePanY
         )
     }
 
@@ -115,7 +131,9 @@ object CompositionTransformEngine {
             sectionState = sectionState,
             sourceDimensions = sourceDimensions,
             viewportWidthPx = outputWidthPx,
-            viewportHeightPx = sectionHeightPx
+            viewportHeightPx = sectionHeightPx,
+            interactiveViewportWidthPx = outputWidthPx,
+            interactiveViewportHeightPx = sectionHeightPx
         )
 
         matrix.postScale(transform.scaleX, transform.scaleY * sectionRatio)
