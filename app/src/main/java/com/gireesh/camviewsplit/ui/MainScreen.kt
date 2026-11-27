@@ -1,6 +1,7 @@
 package com.gireesh.camviewsplit.ui
 
 import android.Manifest
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
@@ -817,6 +818,28 @@ private suspend fun scanMediaFileAsync(context: Context, filePath: String, mimeT
     }
 }
 
+private fun queryMediaStoreByPath(context: Context, filePath: String): Uri? {
+    return try {
+        val projection = arrayOf(MediaStore.Video.Media._ID)
+        val selection = "${MediaStore.Video.Media.DATA} = ?"
+        val selectionArgs = arrayOf(filePath)
+        context.contentResolver.query(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            selection,
+            selectionArgs,
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID))
+                ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+            } else null
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
 private suspend fun saveVideoToPublicGallery(context: Context, sourceFile: File, displayName: String): Uri? = withContext(Dispatchers.IO) {
     val sourceLength = sourceFile.length()
     if (!sourceFile.exists() || sourceLength <= 0L) {
@@ -872,6 +895,10 @@ private suspend fun saveVideoToPublicGallery(context: Context, sourceFile: File,
                 resultUri = scanMediaFileAsync(context, publicFile.absolutePath, "video/mp4")
             }
 
+            if (resultUri == null) {
+                resultUri = queryMediaStoreByPath(context, publicFile.absolutePath)
+            }
+
             // Verify final URI is a valid content:// URI that can be opened and has exact matching file size
             if (resultUri != null && resultUri?.scheme == "content") {
                 val isValid = try {
@@ -885,7 +912,12 @@ private suspend fun saveVideoToPublicGallery(context: Context, sourceFile: File,
                 }
             }
 
-            // Failure path: Clean up file if no valid content:// URI with matching size was generated
+            // Return file URI or content URI safely if file exists and length matches
+            if (publicFile.exists() && publicFile.length() == sourceLength) {
+                return@withContext resultUri ?: Uri.fromFile(publicFile)
+            }
+
+            // Failure path: Clean up incomplete file if size mismatch
             if (publicFile.exists()) publicFile.delete()
             return@withContext null
         } catch (e: Exception) {
