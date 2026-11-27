@@ -106,6 +106,7 @@ class DualVideoComposer(
                             sectionState = topState,
                             splitRatio = splitRatio,
                             isTopSection = true,
+                            isSingleTopMode = (bottomVideoUri == null),
                             sourceDimensions = topDimensions,
                             outputWidthPx = outputWidth.toFloat(),
                             outputHeightPx = outputHeight.toFloat()

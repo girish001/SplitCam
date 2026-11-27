@@ -116,16 +116,34 @@ object CompositionTransformEngine {
     /**
      * Calculates the exact Matrix transformation for Media3 Transformer / OpenGL NDC space.
      * Uses the original top split ratio [splitRatio] for exact vertical positioning of both sections.
+     * When [isSingleTopMode] is true, top video expands to fill 100% of full output canvas.
      */
     fun calculateExportMatrix(
         sectionState: VideoSectionState,
         splitRatio: Float,
         isTopSection: Boolean,
+        isSingleTopMode: Boolean = false,
         sourceDimensions: SourceVideoDimensions,
         outputWidthPx: Float = 1080f,
         outputHeightPx: Float = 1920f
     ): Matrix {
         val matrix = Matrix()
+
+        if (isSingleTopMode && isTopSection) {
+            val transform = calculateTransform(
+                sectionState = sectionState,
+                sourceDimensions = sourceDimensions,
+                viewportWidthPx = outputWidthPx,
+                viewportHeightPx = outputHeightPx,
+                interactiveViewportWidthPx = outputWidthPx,
+                interactiveViewportHeightPx = outputHeightPx
+            )
+
+            matrix.postScale(transform.scaleX, transform.scaleY)
+            matrix.postTranslate(transform.normPanX, transform.normPanY)
+            return matrix
+        }
+
         val topRatio = splitRatio.coerceIn(0.15f, 0.85f)
         val sectionRatio = if (isTopSection) topRatio else (1.0f - topRatio)
         val sectionHeightPx = outputHeightPx * sectionRatio

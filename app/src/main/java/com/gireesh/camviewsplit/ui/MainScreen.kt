@@ -165,6 +165,22 @@ fun MainScreen() {
         )
     }
 
+    // Restore Local Video Playlist from persistence
+    LaunchedEffect(Unit) {
+        val (savedList, savedIdx) = mediaRepository.loadLocalPlaylist()
+        if (savedList.isNotEmpty()) {
+            localVideoPlaylist = savedList
+            currentLocalVideoIndex = savedIdx
+        }
+    }
+
+    // Persist Local Video Playlist whenever playlist or active index changes
+    LaunchedEffect(localVideoPlaylist, currentLocalVideoIndex) {
+        if (localVideoPlaylist.isNotEmpty()) {
+            mediaRepository.saveLocalPlaylist(localVideoPlaylist, currentLocalVideoIndex)
+        }
+    }
+
     // Gallery media selection state (for picking video into top or bottom section)
     var targetSectionForPicker by remember { mutableStateOf<String?>(null) } // "TOP" or "BOTTOM"
 

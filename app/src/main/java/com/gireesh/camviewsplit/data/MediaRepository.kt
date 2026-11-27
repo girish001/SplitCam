@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
+import com.gireesh.camviewsplit.model.LocalVideoItem
 import com.gireesh.camviewsplit.model.MediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,22 +30,88 @@ class MediaRepository(private val context: Context) {
         File(context.filesDir, "captured_index.json")
     }
 
+    private val localPlaylistFile: File by lazy {
+        File(context.filesDir, "local_playlist.json")
+    }
+
     suspend fun loadAllMedia() = withContext(Dispatchers.IO) {
         val captured = loadCapturedFromIndex()
         val imported = loadImportedFiles()
         val mediaStoreItems = queryCamViewMediaStoreItems()
 
-        // Combine unique items by URI
         val map = linkedMapOf<String, MediaItem>()
-        // Prioritize captured index
         captured.forEach { map[it.uri.toString()] = it }
-        // Add MediaStore items
         mediaStoreItems.forEach { map[it.uri.toString()] = it }
-        // Add imported items
         imported.forEach { map[it.uri.toString()] = it }
 
         val sorted = map.values.sortedByDescending { it.dateAdded }
         _mediaItems.value = sorted
+    }
+
+    suspend fun saveLocalPlaylist(playlist: List<LocalVideoItem>, currentIndex: Int) = withContext(Dispatchers.IO) {
+        try {
+            val json = JSONObject()
+            json.put("currentIndex", currentIndex)
+            val array = JSONArray()
+            playlist.forEach { item ->
+                val obj = JSONObject()
+                obj.put("uri", item.uri.toString())
+                obj.put("displayName", item.displayName)
+                obj.put("durationMs", item.durationMs)
+                obj.put("sizeBytes", item.sizeBytes)
+                array.put(obj)
+            }
+            json.put("playlist", array)
+            localPlaylistFile.writeText(json.toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun loadLocalPlaylist(): Pair<List<LocalVideoItem>, Int> = withContext(Dispatchers.IO) {
+        if (!localPlaylistFile.exists()) return@withContext Pair(emptyList(), 0)
+        val validItems = mutableListOf<LocalVideoItem>()
+        var savedIdx = 0
+        try {
+            val text = localPlaylistFile.readText()
+            val json = JSONObject(text)
+            savedIdx = json.optInt("currentIndex", 0)
+            val array = json.optJSONArray("playlist") ?: JSONArray()
+
+            val persistedPermissions = context.contentResolver.persistedUriPermissions.map { it.uri.toString() }.toSet()
+
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val uriStr = obj.optString("uri")
+                val name = obj.optString("displayName", "Local Video")
+                val dur = obj.optLong("durationMs", 0L)
+                val size = obj.optLong("sizeBytes", 0L)
+
+                if (uriStr.isNotEmpty()) {
+                    val uri = Uri.parse(uriStr)
+                    val isAccessible = if (uri.scheme == "file") {
+                        File(uri.path ?: "").exists()
+                    } else {
+                        persistedPermissions.contains(uriStr) || try {
+                            context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+                        } catch (_: Exception) { false }
+                    }
+
+                    if (isAccessible) {
+                        validItems.add(LocalVideoItem(uri, name, dur, size))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        Pair(validItems, savedIdx.coerceIn(0, (validItems.size - 1).coerceAtLeast(0)))
+    }
+
+    suspend fun clearLocalPlaylist() = withContext(Dispatchers.IO) {
+        try {
+            if (localPlaylistFile.exists()) localPlaylistFile.delete()
+        } catch (_: Exception) {}
     }
 
     suspend fun addCapturedMedia(uri: Uri, isVideo: Boolean, displayName: String): MediaItem =
@@ -63,7 +130,6 @@ class MediaRepository(private val context: Context) {
                 isImported = false
             )
 
-            // Save to captured index
             val existing = loadCapturedFromIndex().toMutableList()
             existing.removeAll { it.uri.toString() == uri.toString() }
             existing.add(0, item)
@@ -120,127 +186,43 @@ class MediaRepository(private val context: Context) {
         if (newItems.isNotEmpty()) {
             val current = _mediaItems.value.toMutableList()
             current.addAll(0, newItems)
-            _mediaItems.value = current.sortedByDescending { it.dateAdded }
+            _mediaItems.value = current
         }
-    }
-
-    private fun resolveUriDetails(uri: Uri): Pair<String, Boolean> {
-        var name = ""
-        var isVideo = false
-
-        if (uri.scheme == "content") {
-            try {
-                context.contentResolver.query(
-                    uri,
-                    arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.MIME_TYPE),
-                    null,
-                    null,
-                    null
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                        if (nameIdx != -1) name = cursor.getString(nameIdx) ?: ""
-                        val mimeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
-                        if (mimeIdx != -1) {
-                            val mime = cursor.getString(mimeIdx) ?: ""
-                            if (mime.startsWith("video", ignoreCase = true)) {
-                                isVideo = true
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-
-        if (name.isEmpty()) {
-            name = uri.lastPathSegment ?: "imported_media_${System.currentTimeMillis()}"
-        }
-
-        val lower = name.lowercase(java.util.Locale.US)
-        val uriStr = uri.toString().lowercase(java.util.Locale.US)
-        if (lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".mov") ||
-            lower.endsWith(".avi") || lower.endsWith(".webm") || lower.endsWith(".3gp") ||
-            lower.endsWith(".m4v") || uriStr.contains("video", ignoreCase = true)
-        ) {
-            isVideo = true
-        }
-
-        val mimeType = context.contentResolver.getType(uri) ?: ""
-        if (mimeType.startsWith("video", ignoreCase = true)) {
-            isVideo = true
-        }
-
-        return Pair(name, isVideo)
     }
 
     suspend fun deleteMediaItem(item: MediaItem) = withContext(Dispatchers.IO) {
         try {
             if (item.isImported) {
                 val file = File(item.uri.path ?: "")
-                if (file.exists()) {
-                    file.delete()
-                }
-            } else {
-                // Remove from captured index
-                val captured = loadCapturedFromIndex().toMutableList()
-                captured.removeAll { it.uri.toString() == item.uri.toString() }
-                saveCapturedToIndex(captured)
-
-                // Try deleting from MediaStore if applicable
-                try {
-                    context.contentResolver.delete(item.uri, null, null)
-                } catch (_: Exception) {
-                    // Ignored if not permitted by scoped storage
-                }
+                if (file.exists()) file.delete()
+            } else if (item.uri.scheme == "content") {
+                context.contentResolver.delete(item.uri, null, null)
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        val current = _mediaItems.value.toMutableList()
-        current.removeAll { it.id == item.id || it.uri.toString() == item.uri.toString() }
-        _mediaItems.value = current
-    }
+        val captured = loadCapturedFromIndex().toMutableList()
+        captured.removeAll { it.id == item.id }
+        saveCapturedToIndex(captured)
 
-    private fun loadImportedFiles(): List<MediaItem> {
-        val files = importedDir.listFiles() ?: return emptyList()
-        val list = mutableListOf<MediaItem>()
-        for (file in files) {
-            if (file.isFile && file.length() > 0) {
-                val name = file.name
-                val isVideo = name.endsWith(".mp4", ignoreCase = true) ||
-                        name.endsWith(".mkv", ignoreCase = true) ||
-                        name.endsWith(".webm", ignoreCase = true)
-                val uri = Uri.fromFile(file)
-                val duration = if (isVideo) retrieveVideoDuration(uri) else 0L
-                list.add(
-                    MediaItem(
-                        id = uri.toString(),
-                        uri = uri,
-                        isVideo = isVideo,
-                        displayName = name,
-                        dateAdded = file.lastModified(),
-                        durationMs = duration,
-                        isImported = true
-                    )
-                )
-            }
-        }
-        return list
+        val current = _mediaItems.value.toMutableList()
+        current.removeAll { it.id == item.id }
+        _mediaItems.value = current
     }
 
     private fun loadCapturedFromIndex(): List<MediaItem> {
         if (!capturedIndexFile.exists()) return emptyList()
-        return try {
-            val content = capturedIndexFile.readText()
-            val jsonArray = JSONArray(content)
-            val list = mutableListOf<MediaItem>()
-            for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
+        val list = mutableListOf<MediaItem>()
+        try {
+            val jsonText = capturedIndexFile.readText()
+            val array = JSONArray(jsonText)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
                 val uriStr = obj.getString("uri")
                 list.add(
                     MediaItem(
-                        id = uriStr,
+                        id = obj.getString("id"),
                         uri = Uri.parse(uriStr),
                         isVideo = obj.getBoolean("isVideo"),
                         displayName = obj.getString("displayName"),
@@ -250,68 +232,93 @@ class MediaRepository(private val context: Context) {
                     )
                 )
             }
-            list
-        } catch (_: Exception) {
-            emptyList()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
+        return list
     }
 
     private fun saveCapturedToIndex(items: List<MediaItem>) {
         try {
-            val jsonArray = JSONArray()
-            for (item in items) {
-                val obj = JSONObject().apply {
-                    put("uri", item.uri.toString())
-                    put("isVideo", item.isVideo)
-                    put("displayName", item.displayName)
-                    put("dateAdded", item.dateAdded)
-                    put("durationMs", item.durationMs)
-                }
-                jsonArray.put(obj)
+            val array = JSONArray()
+            items.filter { !it.isImported }.forEach { item ->
+                val obj = JSONObject()
+                obj.put("id", item.id)
+                obj.put("uri", item.uri.toString())
+                obj.put("isVideo", item.isVideo)
+                obj.put("displayName", item.displayName)
+                obj.put("dateAdded", item.dateAdded)
+                obj.put("durationMs", item.durationMs)
+                array.put(obj)
             }
-            capturedIndexFile.writeText(jsonArray.toString())
+            capturedIndexFile.writeText(array.toString())
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
+    private fun loadImportedFiles(): List<MediaItem> {
+        val list = mutableListOf<MediaItem>()
+        val files = importedDir.listFiles() ?: return emptyList()
+        for (file in files) {
+            val isVideo = file.extension.lowercase() in listOf("mp4", "mkv", "webm", "3gp", "avi", "mov")
+            val fileUri = Uri.fromFile(file)
+            var duration = 0L
+            if (isVideo) {
+                duration = retrieveVideoDuration(fileUri)
+            }
+            list.add(
+                MediaItem(
+                    id = fileUri.toString(),
+                    uri = fileUri,
+                    isVideo = isVideo,
+                    displayName = file.name,
+                    dateAdded = file.lastModified(),
+                    durationMs = duration,
+                    isImported = true
+                )
+            )
+        }
+        return list
+    }
+
     private fun queryCamViewMediaStoreItems(): List<MediaItem> {
         val list = mutableListOf<MediaItem>()
-        try {
-            // Videos
-            val videoProjection = arrayOf(
-                MediaStore.Video.Media._ID,
-                MediaStore.Video.Media.DISPLAY_NAME,
-                MediaStore.Video.Media.DATE_ADDED,
-                MediaStore.Video.Media.DURATION
-            )
-            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
-            val selectionArgs = arrayOf("SplitCam_%", "CamViewSplit_%")
+        val projection = arrayOf(
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.DISPLAY_NAME,
+            MediaStore.Video.Media.DATE_ADDED,
+            MediaStore.Video.Media.DURATION
+        )
+        val selection = "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
+        val selectionArgs = arrayOf("%Movies/SplitCam%")
 
+        try {
             context.contentResolver.query(
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                videoProjection,
+                projection,
                 selection,
                 selectionArgs,
                 "${MediaStore.Video.Media.DATE_ADDED} DESC"
             )?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-                val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
-                val durCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
+                val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
 
                 while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idCol)
-                    val name = cursor.getString(nameCol)
-                    val dateAdded = cursor.getLong(dateCol) * 1000
-                    val duration = cursor.getLong(durCol)
-                    val uri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+                    val id = cursor.getLong(idColumn)
+                    val name = cursor.getString(nameColumn)
+                    val dateAdded = cursor.getLong(dateColumn) * 1000
+                    val duration = cursor.getLong(durationColumn)
+                    val contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+
                     list.add(
                         MediaItem(
-                            id = uri.toString(),
-                            uri = uri,
+                            id = contentUri.toString(),
+                            uri = contentUri,
                             isVideo = true,
-                            displayName = name,
+                            displayName = name ?: "SplitCam Video",
                             dateAdded = dateAdded,
                             durationMs = duration,
                             isImported = false
@@ -319,46 +326,33 @@ class MediaRepository(private val context: Context) {
                     )
                 }
             }
-
-            // Photos
-            val imageProjection = arrayOf(
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DISPLAY_NAME,
-                MediaStore.Images.Media.DATE_ADDED
-            )
-            context.contentResolver.query(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                imageProjection,
-                selection,
-                selectionArgs,
-                "${MediaStore.Images.Media.DATE_ADDED} DESC"
-            )?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-                val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
-
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idCol)
-                    val name = cursor.getString(nameCol)
-                    val dateAdded = cursor.getLong(dateCol) * 1000
-                    val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
-                    list.add(
-                        MediaItem(
-                            id = uri.toString(),
-                            uri = uri,
-                            isVideo = false,
-                            displayName = name,
-                            dateAdded = dateAdded,
-                            durationMs = 0L,
-                            isImported = false
-                        )
-                    )
-                }
-            }
-        } catch (_: Exception) {
-            // Permission or MediaStore query error fallback
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
         return list
+    }
+
+    private fun resolveUriDetails(uri: Uri): Pair<String, Boolean> {
+        var name = "imported_${System.currentTimeMillis()}"
+        var isVideo = true
+        try {
+            val mime = context.contentResolver.getType(uri)
+            if (mime != null) {
+                isVideo = mime.startsWith("video/")
+            }
+            context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    if (idx != -1) {
+                        val displayName = cursor.getString(idx)
+                        if (!displayName.isNullOrEmpty()) {
+                            name = displayName
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return Pair(name, isVideo)
     }
 
     private fun retrieveVideoDuration(uri: Uri): Long {
@@ -370,10 +364,7 @@ class MediaRepository(private val context: Context) {
         } catch (_: Exception) {
             0L
         } finally {
-            try {
-                retriever.release()
-            } catch (_: Exception) {
-            }
+            try { retriever.release() } catch (_: Exception) {}
         }
     }
 }

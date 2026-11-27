@@ -215,6 +215,24 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testSingleTopModeExportMatrix() {
+        val dims = SourceVideoDimensions(1080, 1920, 0)
+        val sectionState = VideoSectionState()
+
+        val fullMatrix = CompositionTransformEngine.calculateExportMatrix(
+            sectionState = sectionState,
+            splitRatio = 0.5f,
+            isTopSection = true,
+            isSingleTopMode = true,
+            sourceDimensions = dims,
+            outputWidthPx = 1080f,
+            outputHeightPx = 1920f
+        )
+
+        assertTrue(fullMatrix != null)
+    }
+
+    @Test
     fun testEmptySourceFileValidation() {
         val tempFile = java.io.File.createTempFile("empty_test", ".mp4")
         tempFile.deleteOnExit()
