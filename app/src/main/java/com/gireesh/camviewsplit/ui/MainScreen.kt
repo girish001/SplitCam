@@ -129,7 +129,8 @@ fun MainScreen() {
     val cameraCaptureManager = remember { CameraCaptureManager(context, scope) }
     val dualVideoComposer = remember { DualVideoComposer(context, scope) }
 
-    // SharedPreferences for Split Ratio Persistence
+    // Deletion Progress Guard
+    var isDeletingMedia by remember { mutableStateOf(false) }
     val prefs = remember { context.getSharedPreferences("splitcam_prefs", Context.MODE_PRIVATE) }
 
     // Dual Video Composition Configuration (Restores saved splitRatio)
@@ -425,13 +426,20 @@ fun MainScreen() {
                                     item = selectedVideo!!,
                                     onBack = { selectedVideo = null },
                                     onDelete = { item ->
-                                        scope.launch {
-                                            val deleted = mediaRepository.deleteMediaItem(item)
-                                            if (deleted) {
-                                                selectedVideo = null
-                                                snackbarHostState.showSnackbar("Video deleted")
-                                            } else {
-                                                snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                                        if (!isDeletingMedia) {
+                                            isDeletingMedia = true
+                                            scope.launch {
+                                                try {
+                                                    val deleted = mediaRepository.deleteMediaItem(item)
+                                                    if (deleted) {
+                                                        selectedVideo = null
+                                                        snackbarHostState.showSnackbar("Video deleted")
+                                                    } else {
+                                                        snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                                                    }
+                                                } finally {
+                                                    isDeletingMedia = false
+                                                }
                                             }
                                         }
                                     },
@@ -443,13 +451,20 @@ fun MainScreen() {
                                     item = selectedPhoto!!,
                                     onBack = { selectedPhoto = null },
                                     onDelete = { item ->
-                                        scope.launch {
-                                            val deleted = mediaRepository.deleteMediaItem(item)
-                                            if (deleted) {
-                                                selectedPhoto = null
-                                                snackbarHostState.showSnackbar("Photo deleted")
-                                            } else {
-                                                snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                                        if (!isDeletingMedia) {
+                                            isDeletingMedia = true
+                                            scope.launch {
+                                                try {
+                                                    val deleted = mediaRepository.deleteMediaItem(item)
+                                                    if (deleted) {
+                                                        selectedPhoto = null
+                                                        snackbarHostState.showSnackbar("Photo deleted")
+                                                    } else {
+                                                        snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                                                    }
+                                                } finally {
+                                                    isDeletingMedia = false
+                                                }
                                             }
                                         }
                                     },

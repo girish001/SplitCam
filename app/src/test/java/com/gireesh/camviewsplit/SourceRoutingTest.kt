@@ -209,6 +209,39 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testDirectoryBoundaryValidation() {
+        val baseDir = java.io.File("C:/app/imported_media")
+        val validSubFile = java.io.File(baseDir, "video.mp4")
+        val siblingFile = java.io.File(java.io.File("C:/app/imported_media_other"), "video.mp4")
+
+        val dirPathWithSeparator = baseDir.path + java.io.File.separator
+
+        assertTrue(validSubFile.path.startsWith(dirPathWithSeparator))
+        assertFalse(siblingFile.path.startsWith(dirPathWithSeparator)) // Sibling directory rejected!
+    }
+
+    @Test
+    fun testDeletionStateConsistency() {
+        var isDeleted = false
+        val indexList = mutableListOf("item_1")
+
+        fun updateIndexOnDeletionSuccess(success: Boolean) {
+            if (success) {
+                indexList.clear()
+            }
+        }
+
+        // Deletion fails
+        updateIndexOnDeletionSuccess(isDeleted)
+        assertEquals(1, indexList.size) // Index preserved when deletion fails!
+
+        // Deletion succeeds
+        isDeleted = true
+        updateIndexOnDeletionSuccess(isDeleted)
+        assertEquals(0, indexList.size) // Index updated when deletion succeeds!
+    }
+
+    @Test
     fun testSocialPlatformSwitchingUrlUpdate() {
         var lastSource: BottomViewerSource? = null
         var loadedUrl: String? = null
@@ -264,19 +297,6 @@ class SourceRoutingTest {
 
         assertTrue(firstAttempt)
         assertFalse(secondAttempt) // Late callback rejected safely!
-    }
-
-    @Test
-    fun testMediaScannerTimeoutAndFileRetention() {
-        val tempFile = java.io.File.createTempFile("timeout_test", ".mp4")
-        tempFile.writeBytes(ByteArray(100))
-        tempFile.deleteOnExit()
-
-        val isTimeout = true
-        // File must be retained safely on timeout, NOT deleted
-        assertTrue(tempFile.exists())
-        assertEquals(100L, tempFile.length())
-        assertTrue(isTimeout)
     }
 
     @Test

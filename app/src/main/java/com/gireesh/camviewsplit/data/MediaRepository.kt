@@ -208,23 +208,13 @@ class MediaRepository(private val context: Context) {
                         e.printStackTrace()
                         0
                     }
-                    if (rows > 0) {
-                        deleted = true
-                    } else {
-                        // Check if file is already missing on disk
-                        val path = uri.path
-                        if (path != null && !File(path).exists()) {
-                            deleted = true
-                        }
-                    }
+                    deleted = rows > 0
                 }
                 item.isImported || uri.scheme == "file" -> {
                     val file = File(uri.path ?: "")
-                    if (!file.exists()) {
-                        deleted = true
-                    } else {
-                        val allowedImportDir = importedDir.canonicalPath
-                        if (file.canonicalPath.startsWith(allowedImportDir)) {
+                    if (file.exists()) {
+                        val dirPathWithSeparator = importedDir.canonicalPath + File.separator
+                        if (file.canonicalPath.startsWith(dirPathWithSeparator) || file.canonicalPath == importedDir.canonicalPath) {
                             deleted = file.delete()
                         }
                     }
