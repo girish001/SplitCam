@@ -15,11 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -42,12 +37,12 @@ fun BottomVideoViewer(
 ) {
     val context = LocalContext.current
 
-    // Local Video Multi-Picker Launcher
+    // Local Video Multi-Picker Launcher using OpenMultipleDocuments for persistent URI access
     val localVideoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents(),
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
         onResult = { uris ->
             if (uris.isNotEmpty()) {
-                val newItems = uris.map { uri ->
+                val newItems = uris.mapNotNull { uri ->
                     try {
                         context.contentResolver.takePersistableUriPermission(
                             uri,
@@ -59,12 +54,19 @@ fun BottomVideoViewer(
                     LocalVideoItem(uri = uri, displayName = fileName)
                 }
 
-                val updatedList = localVideoList + newItems
-                onLocalVideoListChange(updatedList)
-                if (localVideoList.isEmpty()) {
-                    onLocalIndexChange(0)
+                // Filter out duplicates already in playlist
+                val uniqueItems = newItems.filter { newItem -> localVideoList.none { existing -> existing.uri == newItem.uri } }
+
+                if (uniqueItems.isNotEmpty()) {
+                    val updatedList = localVideoList + uniqueItems
+                    onLocalVideoListChange(updatedList)
+                    if (localVideoList.isEmpty()) {
+                        onLocalIndexChange(0)
+                    }
+                    Toast.makeText(context, "Added ${uniqueItems.size} video(s) to playlist", Toast.LENGTH_SHORT).show()
+                } else if (newItems.isNotEmpty()) {
+                    Toast.makeText(context, "Selected video(s) already in playlist", Toast.LENGTH_SHORT).show()
                 }
-                Toast.makeText(context, "Added ${newItems.size} local videos to playlist", Toast.LENGTH_SHORT).show()
             }
         }
     )
@@ -102,7 +104,7 @@ fun BottomVideoViewer(
                     isFullScreen = isFullScreen,
                     onIndexChanged = onLocalIndexChange,
                     onSelectVideosClick = {
-                        localVideoPickerLauncher.launch("video/*")
+                        localVideoPickerLauncher.launch(arrayOf("video/*"))
                     },
                     onRemoveVideoClick = { removeIdx ->
                         val updated = localVideoList.toMutableList().apply { removeAt(removeIdx) }
@@ -132,7 +134,8 @@ private fun resolveFileName(context: android.content.Context, uri: Uri): String 
             if (it.moveToFirst()) {
                 val idx = it.getColumnIndex(android.provider.MediaStore.MediaColumns.DISPLAY_NAME)
                 if (idx != -1) {
-                    name = it.getString(idx)
+                    val displayName = it.getString(idx)
+                    if (!displayName.isNullOrBlank()) name = displayName
                 }
             }
         }

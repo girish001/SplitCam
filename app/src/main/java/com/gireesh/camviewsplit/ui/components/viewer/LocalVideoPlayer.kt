@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +64,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -96,6 +100,11 @@ fun LocalVideoPlayer(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    val currentVideoList by rememberUpdatedState(videoList)
+    val currentIdx by rememberUpdatedState(currentIndex)
+    val currentOnIndexChanged by rememberUpdatedState(onIndexChanged)
 
     val currentVideo = videoList.getOrNull(currentIndex)
 
@@ -105,11 +114,34 @@ fun LocalVideoPlayer(
     var scaleMode by remember { mutableStateOf(ContentScaleMode.FIT) }
     var isAutoPlayNext by remember { mutableStateOf(true) }
 
+    val currentAutoPlayNext by rememberUpdatedState(isAutoPlayNext)
+
     var currentPositionMs by remember { mutableLongStateOf(0L) }
     var totalDurationMs by remember { mutableLongStateOf(0L) }
 
     var playbackErrorMsg by remember { mutableStateOf<String?>(null) }
     var showPlaylistDrawer by remember { mutableStateOf(false) }
+
+    // App Lifecycle Management (Pause on Background, Resume on Foreground)
+    DisposableEffect(lifecycleOwner, exoPlayer) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                    exoPlayer?.playWhenReady = false
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    if (isPlaying) {
+                        exoPlayer?.playWhenReady = true
+                    }
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     // ExoPlayer Lifecycle and Event Management
     DisposableEffect(currentVideo) {
@@ -126,9 +158,9 @@ fun LocalVideoPlayer(
                         if (state == Player.STATE_READY) {
                             totalDurationMs = duration.coerceAtLeast(0L)
                         } else if (state == Player.STATE_ENDED) {
-                            if (isAutoPlayNext && videoList.isNotEmpty()) {
-                                val nextIdx = (currentIndex + 1) % videoList.size
-                                onIndexChanged(nextIdx)
+                            if (currentAutoPlayNext && currentVideoList.isNotEmpty()) {
+                                val nextIdx = (currentIdx + 1) % currentVideoList.size
+                                currentOnIndexChanged(nextIdx)
                             }
                         }
                     }

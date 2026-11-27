@@ -654,17 +654,6 @@ fun MainScreen() {
                             CompositionSourceResolver.resolve(config, sessionCameraRecordings)
                         }
 
-                // Social Media Export & Sharing Panel (Always accessible after recording)
-                if (!isCameraRecording && !isExportingComposition && selectedVideo == null && selectedPhoto == null) {
-                    SocialMediaPanel(
-                        exportedVideoUri = lastExportedVideoUri,
-                        topMediaUri = liveResolvedURIs.topUri,
-                        bottomMediaUri = liveResolvedURIs.bottomUri,
-                        config = config,
-                        onExportWithDimensions = { _, _ -> }
-                    )
-                }
-
                 // Export Settings Bottom Sheet Dialog
                 if (showExportSettingsSheet) {
                     ExportSettingsBottomSheet(

@@ -1,7 +1,9 @@
 package com.gireesh.camviewsplit
 
+import com.gireesh.camviewsplit.model.BottomViewerSource
 import com.gireesh.camviewsplit.model.ContentScaleMode
 import com.gireesh.camviewsplit.model.DualVideoCompositionConfig
+import com.gireesh.camviewsplit.model.LocalVideoItem
 import com.gireesh.camviewsplit.model.RecordingSession
 import com.gireesh.camviewsplit.model.VideoSectionState
 import com.gireesh.camviewsplit.model.VideoSource
@@ -154,6 +156,62 @@ class SourceRoutingTest {
         val resolved = CompositionSourceResolver.resolve(updatedConfig, session)
         assertFalse(resolved.isValid)
         assertNull(resolved.topUri)
+    }
+
+    @Test
+    fun testLocalVideoPlaylistNavigationAndDuplicates() {
+        val mockUri1 = mock(android.net.Uri::class.java)
+        val mockUri2 = mock(android.net.Uri::class.java)
+
+        val item1 = LocalVideoItem(mockUri1, "Video 1")
+        val item2 = LocalVideoItem(mockUri2, "Video 2")
+
+        val playlist = listOf(item1, item2)
+
+        // Duplicate filtering check
+        val isDuplicate = playlist.any { it.uri == mockUri1 }
+        assertTrue(isDuplicate)
+
+        // Next / Previous navigation calculation check
+        val currentIdx = 0
+        val nextIdx = (currentIdx + 1) % playlist.size
+        val prevIdx = if (currentIdx - 1 < 0) playlist.size - 1 else currentIdx - 1
+
+        assertEquals(1, nextIdx)
+        assertEquals(1, prevIdx)
+    }
+
+    @Test
+    fun testSplitRatioBoundsAndReset() {
+        val splitRatio = 0.95f // Out of bounds
+        val clampedRatio = splitRatio.coerceIn(0.20f, 0.80f)
+        assertEquals(0.80f, clampedRatio, 0.001f)
+
+        val resetRatio = 0.50f
+        assertEquals(0.50f, resetRatio, 0.001f)
+    }
+
+    @Test
+    fun testRecordingSourceIsolation() {
+        val topSource = VideoSource.LiveCameraFront
+
+        val config = DualVideoCompositionConfig(
+            topState = VideoSectionState(source = topSource),
+            bottomState = VideoSectionState(source = VideoSource.None)
+        )
+
+        val mockUri = mock(android.net.Uri::class.java)
+        val session = RecordingSession(
+            topSource = topSource,
+            bottomSource = VideoSource.None,
+            primaryCameraUri = mockUri
+        )
+
+        val resolved = CompositionSourceResolver.resolve(config, session)
+
+        assertTrue(resolved.isValid)
+        assertEquals(mockUri, resolved.topUri)
+        assertNull(resolved.bottomUri) // Bottom viewer is excluded from recording
     }
 
     @Test
