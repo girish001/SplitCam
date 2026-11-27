@@ -77,6 +77,9 @@ android {
         unitTests {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
+            all {
+                it.systemProperty("net.bytebuddy.experimental", "true")
+            }
         }
     }
     buildFeatures {

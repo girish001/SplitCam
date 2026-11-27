@@ -21,6 +21,7 @@ import androidx.media3.transformer.Transformer
 import com.gireesh.camviewsplit.model.ContentScaleMode
 import com.gireesh.camviewsplit.model.DualVideoCompositionConfig
 import com.gireesh.camviewsplit.model.VideoSource
+import com.gireesh.camviewsplit.util.CompositionTransformEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -91,15 +92,13 @@ class DualVideoComposer(
                 val splitRatio = config.splitRatio
 
                 val topMatrixTransform = MatrixTransformation { _ ->
-                    val matrix = android.graphics.Matrix()
-                    val fitScaleMultiplier = if (topState.contentScaleMode == ContentScaleMode.FIT) 0.85f else 1.0f
-                    val zoom = (topState.zoomScale * fitScaleMultiplier).coerceAtLeast(0.1f)
-                    val panX = (topState.panOffset.x / 360f).coerceIn(-1.0f, 1.0f)
-                    val panY = (-topState.panOffset.y / 640f).coerceIn(-1.0f, 1.0f)
-
-                    matrix.postScale(zoom, zoom * splitRatio)
-                    matrix.postTranslate(panX, (1.0f - splitRatio) + panY)
-                    matrix
+                    CompositionTransformEngine.calculateSectionMatrix(
+                        sectionState = topState,
+                        sectionRatio = splitRatio,
+                        isTopSection = true,
+                        viewportWidthPx = outputWidth.toFloat(),
+                        viewportHeightPx = outputHeight.toFloat()
+                    )
                 }
                 topEffectsList.add(topMatrixTransform)
 
@@ -127,15 +126,13 @@ class DualVideoComposer(
                 val splitRatio = config.splitRatio
 
                 val bottomMatrixTransform = MatrixTransformation { _ ->
-                    val matrix = android.graphics.Matrix()
-                    val fitScaleMultiplier = if (bottomState.contentScaleMode == ContentScaleMode.FIT) 0.85f else 1.0f
-                    val zoom = (bottomState.zoomScale * fitScaleMultiplier).coerceAtLeast(0.1f)
-                    val panX = (bottomState.panOffset.x / 360f).coerceIn(-1.0f, 1.0f)
-                    val panY = (-bottomState.panOffset.y / 640f).coerceIn(-1.0f, 1.0f)
-
-                    matrix.postScale(zoom, zoom * (1.0f - splitRatio))
-                    matrix.postTranslate(panX, -splitRatio + panY)
-                    matrix
+                    CompositionTransformEngine.calculateSectionMatrix(
+                        sectionState = bottomState,
+                        sectionRatio = 1.0f - splitRatio,
+                        isTopSection = false,
+                        viewportWidthPx = outputWidth.toFloat(),
+                        viewportHeightPx = outputHeight.toFloat()
+                    )
                 }
                 bottomEffectsList.add(bottomMatrixTransform)
 

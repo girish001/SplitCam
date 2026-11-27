@@ -86,8 +86,10 @@ import com.gireesh.camviewsplit.ui.components.GallerySection
 import com.gireesh.camviewsplit.ui.components.InteractiveVideoViewport
 import com.gireesh.camviewsplit.ui.components.LayoutPresetBar
 import com.gireesh.camviewsplit.ui.components.PhotoViewer
+import com.gireesh.camviewsplit.model.RecordingSession
 import com.gireesh.camviewsplit.ui.components.SocialMediaPanel
 import com.gireesh.camviewsplit.ui.components.VideoPlayerView
+import com.gireesh.camviewsplit.util.CompositionSourceResolver
 import com.gireesh.camviewsplit.ui.theme.CyanPrimary
 import com.gireesh.camviewsplit.ui.theme.DarkBackground
 import com.gireesh.camviewsplit.ui.theme.DarkBorder
@@ -117,8 +119,8 @@ fun MainScreen() {
     // Dual Video Composition Configuration
     var config by remember { mutableStateOf(DualVideoCompositionConfig()) }
 
-    // Session Camera Recordings State (stores latest primary & secondary camera recordings)
-    var sessionCameraRecordings by remember { mutableStateOf<Pair<Uri, Uri?>?>(null) }
+    // Session Camera Recordings State
+    var sessionCameraRecordings by remember { mutableStateOf<RecordingSession?>(null) }
 
     // PreviewView instances for top and bottom viewports
     val topPreviewView = remember {
@@ -528,19 +530,23 @@ fun MainScreen() {
                                                 // Combinations 1, 2, 3: Live Camera(s) + Optional Gallery Video
                                                 cameraCaptureManager.startVideoRecording(
                                                     onSuccess = { primaryCameraUri, secondaryCameraUri ->
-                                                        sessionCameraRecordings = Pair(primaryCameraUri, secondaryCameraUri)
+                                                        sessionCameraRecordings = RecordingSession(
+                                                            topSource = config.topState.source,
+                                                            bottomSource = config.bottomState.source,
+                                                            primaryCameraUri = primaryCameraUri,
+                                                            secondaryCameraUri = secondaryCameraUri
+                                                        )
+                                                        val resolved = CompositionSourceResolver.resolve(config, sessionCameraRecordings)
+
                                                         scope.launch {
                                                             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
                                                             val cleanFileName = "SplitCam_CLEAN_$timestamp.mp4"
                                                             val moviesDir = context.getExternalFilesDir("Movies") ?: context.filesDir
                                                             val cleanOutputFile = File(moviesDir, cleanFileName)
 
-                                                            val topUri = if (isTopCamera) primaryCameraUri else (config.topState.source as? VideoSource.GalleryVideo)?.uri
-                                                            val bottomUri = if (isBottomCamera) (secondaryCameraUri ?: primaryCameraUri) else (config.bottomState.source as? VideoSource.GalleryVideo)?.uri
-
                                                             dualVideoComposer.exportComposition(
-                                                                topVideoUri = topUri,
-                                                                bottomVideoUri = bottomUri,
+                                                                topVideoUri = resolved.topUri,
+                                                                bottomVideoUri = resolved.bottomUri,
                                                                 config = config,
                                                                 outputFile = cleanOutputFile,
                                                                 onSuccess = { exportedFile ->
@@ -618,34 +624,23 @@ fun MainScreen() {
                             }
                         }
 
+                        // Resolve current live/gallery top and bottom URIs for Real Output Preview & Export
+                        val liveResolvedURIs = remember(config, sessionCameraRecordings) {
+                            CompositionSourceResolver.resolve(config, sessionCameraRecordings)
+                        }
+
                         // Social Media Export & Sharing Panel
                         if (!isCameraRecording && !isExportingComposition) {
                             SocialMediaPanel(
                                 exportedVideoUri = selectedVideo?.uri,
+                                topMediaUri = liveResolvedURIs.topUri,
+                                bottomMediaUri = liveResolvedURIs.bottomUri,
                                 config = config,
                                 onExportWithDimensions = { customWidth, customHeight ->
-                                    val isTopCamera = config.topState.source is VideoSource.LiveCameraFront || config.topState.source is VideoSource.LiveCameraRear
-                                    val isBottomCamera = config.bottomState.source is VideoSource.LiveCameraFront || config.bottomState.source is VideoSource.LiveCameraRear
+                                    val resolvedPair = CompositionSourceResolver.resolve(config, sessionCameraRecordings)
 
-                                    val topUri = if (isTopCamera) {
-                                        sessionCameraRecordings?.first
-                                    } else {
-                                        (config.topState.source as? VideoSource.GalleryVideo)?.uri
-                                    }
-
-                                    val bottomUri = if (isBottomCamera) {
-                                        if (isTopCamera) sessionCameraRecordings?.second else sessionCameraRecordings?.first
-                                    } else {
-                                        (config.bottomState.source as? VideoSource.GalleryVideo)?.uri
-                                    }
-
-                                    if ((isTopCamera && topUri == null) || (isBottomCamera && bottomUri == null)) {
-                                        scope.launch { snackbarHostState.showSnackbar("Please record live camera video using the Record button first before exporting.") }
-                                        return@SocialMediaPanel
-                                    }
-
-                                    if (topUri == null && bottomUri == null) {
-                                        scope.launch { snackbarHostState.showSnackbar("Please select video sources or record a video first.") }
+                                    if (!resolvedPair.isValid) {
+                                        scope.launch { snackbarHostState.showSnackbar(resolvedPair.errorMessage ?: "Video sources not ready for export.") }
                                         return@SocialMediaPanel
                                     }
 
@@ -656,8 +651,8 @@ fun MainScreen() {
                                         val cleanOutputFile = File(moviesDir, cleanFileName)
 
                                         dualVideoComposer.exportComposition(
-                                            topVideoUri = topUri,
-                                            bottomVideoUri = bottomUri,
+                                            topVideoUri = resolvedPair.topUri,
+                                            bottomVideoUri = resolvedPair.bottomUri,
                                             config = config,
                                             outputFile = cleanOutputFile,
                                             outputWidth = customWidth,

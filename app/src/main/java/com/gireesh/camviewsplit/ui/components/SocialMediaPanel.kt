@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
@@ -42,11 +43,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.ImageLoader
+import coil.compose.SubcomposeAsyncImage
+import coil.decode.VideoFrameDecoder
+import coil.request.ImageRequest
+import coil.request.videoFrameMillis
 import com.gireesh.camviewsplit.model.ContentScaleMode
 import com.gireesh.camviewsplit.model.DualVideoCompositionConfig
 import com.gireesh.camviewsplit.ui.theme.CyanPrimary
@@ -71,11 +79,20 @@ data class SocialPreset(
 @Composable
 fun SocialMediaPanel(
     exportedVideoUri: Uri?,
+    topMediaUri: Uri?,
+    bottomMediaUri: Uri?,
     config: DualVideoCompositionConfig,
     onExportWithDimensions: (width: Int, height: Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+
+    val imageLoader = remember {
+        ImageLoader.Builder(context)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .crossfade(true)
+            .build()
+    }
 
     var selectedPlatforms by remember { mutableStateOf(setOf(SocialPlatform.INSTAGRAM)) }
 
@@ -103,8 +120,8 @@ fun SocialMediaPanel(
     var customWidthStr by remember { mutableStateOf("1080") }
     var customHeightStr by remember { mutableStateOf("1920") }
 
-    val rawWidth = if (isCustomResolution) customWidthStr.toIntOrNull() ?: 1080 else activePreset.width
-    val rawHeight = if (isCustomResolution) customHeightStr.toIntOrNull() ?: 1920 else activePreset.height
+    val rawWidth = if (isCustomResolution) customWidthStr.toIntOrNull() ?: 0 else activePreset.width
+    val rawHeight = if (isCustomResolution) customHeightStr.toIntOrNull() ?: 0 else activePreset.height
 
     val validationResult = remember(rawWidth, rawHeight) {
         ResolutionValidator.validateAndNormalize(rawWidth, rawHeight)
@@ -298,8 +315,8 @@ fun SocialMediaPanel(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Real Output Aspect Ratio Preview Box
-        Text(text = "Output Framing Preview:", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+        // Real Output Aspect Ratio Preview Box with Actual Media Frames
+        Text(text = "Real Output Framing Preview:", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
         Spacer(modifier = Modifier.height(4.dp))
 
         Box(
@@ -320,20 +337,45 @@ fun SocialMediaPanel(
                     .border(1.dp, CyanPrimary, RoundedCornerShape(8.dp))
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Top Section Preview in Target Frame
+                    // Top Section Real Media Preview
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(config.splitRatio.coerceIn(0.15f, 0.85f))
-                            .background(CyanPrimary.copy(alpha = 0.25f)),
+                            .background(DarkSurface),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "TOP [${if (config.topState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",
-                            color = CyanPrimary,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (topMediaUri != null) {
+                            val topScale = if (config.topState.contentScaleMode == ContentScaleMode.FILL) ContentScale.Crop else ContentScale.Fit
+                            val topRequest = remember(topMediaUri) {
+                                ImageRequest.Builder(context)
+                                    .data(topMediaUri)
+                                    .videoFrameMillis(1000)
+                                    .crossfade(true)
+                                    .build()
+                            }
+                            SubcomposeAsyncImage(
+                                model = topRequest,
+                                imageLoader = imageLoader,
+                                contentDescription = "Top Section Preview",
+                                contentScale = topScale,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer(
+                                        scaleX = config.topState.zoomScale,
+                                        scaleY = config.topState.zoomScale,
+                                        translationX = config.topState.panOffset.x / 4f,
+                                        translationY = config.topState.panOffset.y / 4f
+                                    )
+                            )
+                        } else {
+                            Text(
+                                text = "TOP [${if (config.topState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",
+                                color = CyanPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
                     // Divider Line
@@ -341,20 +383,45 @@ fun SocialMediaPanel(
                         HorizontalDivider(thickness = 2.dp, color = CyanPrimary)
                     }
 
-                    // Bottom Section Preview in Target Frame
+                    // Bottom Section Real Media Preview
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight((1.0f - config.splitRatio).coerceIn(0.15f, 0.85f))
-                            .background(TealAccent.copy(alpha = 0.25f)),
+                            .background(DarkSurface),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "BOTTOM [${if (config.bottomState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",
-                            color = TealAccent,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (bottomMediaUri != null) {
+                            val bottomScale = if (config.bottomState.contentScaleMode == ContentScaleMode.FILL) ContentScale.Crop else ContentScale.Fit
+                            val bottomRequest = remember(bottomMediaUri) {
+                                ImageRequest.Builder(context)
+                                    .data(bottomMediaUri)
+                                    .videoFrameMillis(1000)
+                                    .crossfade(true)
+                                    .build()
+                            }
+                            SubcomposeAsyncImage(
+                                model = bottomRequest,
+                                imageLoader = imageLoader,
+                                contentDescription = "Bottom Section Preview",
+                                contentScale = bottomScale,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer(
+                                        scaleX = config.bottomState.zoomScale,
+                                        scaleY = config.bottomState.zoomScale,
+                                        translationX = config.bottomState.panOffset.x / 4f,
+                                        translationY = config.bottomState.panOffset.y / 4f
+                                    )
+                            )
+                        } else {
+                            Text(
+                                text = "BOTTOM [${if (config.bottomState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",
+                                color = TealAccent,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
@@ -371,6 +438,7 @@ fun SocialMediaPanel(
                 }
                 onExportWithDimensions(validationResult.width, validationResult.height)
             },
+            enabled = validationResult.isValid,
             colors = ButtonDefaults.buttonColors(
                 containerColor = CyanPrimary,
                 contentColor = Color.Black

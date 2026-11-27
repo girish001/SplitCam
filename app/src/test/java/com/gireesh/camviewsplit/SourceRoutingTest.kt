@@ -1,8 +1,11 @@
 package com.gireesh.camviewsplit
 
+import android.net.Uri
 import com.gireesh.camviewsplit.model.DualVideoCompositionConfig
+import com.gireesh.camviewsplit.model.RecordingSession
 import com.gireesh.camviewsplit.model.VideoSectionState
 import com.gireesh.camviewsplit.model.VideoSource
+import com.gireesh.camviewsplit.util.CompositionSourceResolver
 import com.gireesh.camviewsplit.util.ResolutionValidator
 import com.gireesh.camviewsplit.util.SocialPlatform
 import org.junit.Assert.assertEquals
@@ -10,6 +13,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.Mockito.mock
 
 class SourceRoutingTest {
 
@@ -58,37 +62,96 @@ class SourceRoutingTest {
     }
 
     @Test
-    fun testCameraAndCameraURIMapping() {
-        val top = VideoSectionState(source = VideoSource.LiveCameraFront)
-        val bottom = VideoSectionState(source = VideoSource.LiveCameraRear)
-        val config = DualVideoCompositionConfig(topState = top, bottomState = bottom)
+    fun testProductionSourceResolverAllFourCombinations() {
+        val mockCameraUri1 = mock(Uri::class.java)
+        val mockCameraUri2 = mock(Uri::class.java)
+        val mockGalleryUri1 = mock(Uri::class.java)
+        val mockGalleryUri2 = mock(Uri::class.java)
 
-        val isTopCam = isCameraSource(config.topState.source)
-        val isBottomCam = isCameraSource(config.bottomState.source)
+        // 1. Camera + Camera
+        val config1 = DualVideoCompositionConfig(
+            topState = VideoSectionState(source = VideoSource.LiveCameraFront),
+            bottomState = VideoSectionState(source = VideoSource.LiveCameraRear)
+        )
+        val session1 = RecordingSession(
+            topSource = VideoSource.LiveCameraFront,
+            bottomSource = VideoSource.LiveCameraRear,
+            primaryCameraUri = mockCameraUri1,
+            secondaryCameraUri = mockCameraUri2
+        )
+        val pair1 = CompositionSourceResolver.resolve(config1, session1)
+        assertTrue(pair1.isValid)
+        assertEquals(mockCameraUri1, pair1.topUri)
+        assertEquals(mockCameraUri2, pair1.bottomUri)
 
-        val primaryCamUri = "file:///cache/primary.mp4"
-        val secondaryCamUri = "file:///cache/secondary.mp4"
+        // 2. Camera + Gallery
+        val config2 = DualVideoCompositionConfig(
+            topState = VideoSectionState(source = VideoSource.LiveCameraFront),
+            bottomState = VideoSectionState(source = VideoSource.GalleryVideo(mockGalleryUri2))
+        )
+        val session2 = RecordingSession(
+            topSource = VideoSource.LiveCameraFront,
+            bottomSource = VideoSource.None,
+            primaryCameraUri = mockCameraUri1
+        )
+        val pair2 = CompositionSourceResolver.resolve(config2, session2)
+        assertTrue(pair2.isValid)
+        assertEquals(mockCameraUri1, pair2.topUri)
+        assertEquals(mockGalleryUri2, pair2.bottomUri)
 
-        val topUri = if (isTopCam) primaryCamUri else null
-        val bottomUri = if (isBottomCam) secondaryCamUri else null
+        // 3. Gallery + Camera
+        val config3 = DualVideoCompositionConfig(
+            topState = VideoSectionState(source = VideoSource.GalleryVideo(mockGalleryUri1)),
+            bottomState = VideoSectionState(source = VideoSource.LiveCameraRear)
+        )
+        val session3 = RecordingSession(
+            topSource = VideoSource.None,
+            bottomSource = VideoSource.LiveCameraRear,
+            primaryCameraUri = mockCameraUri2
+        )
+        val pair3 = CompositionSourceResolver.resolve(config3, session3)
+        assertTrue(pair3.isValid)
+        assertEquals(mockGalleryUri1, pair3.topUri)
+        assertEquals(mockCameraUri2, pair3.bottomUri)
 
-        assertEquals("file:///cache/primary.mp4", topUri)
-        assertEquals("file:///cache/secondary.mp4", bottomUri)
+        // 4. Gallery + Gallery
+        val config4 = DualVideoCompositionConfig(
+            topState = VideoSectionState(source = VideoSource.GalleryVideo(mockGalleryUri1)),
+            bottomState = VideoSectionState(source = VideoSource.GalleryVideo(mockGalleryUri2))
+        )
+        val pair4 = CompositionSourceResolver.resolve(config4, null)
+        assertTrue(pair4.isValid)
+        assertEquals(mockGalleryUri1, pair4.topUri)
+        assertEquals(mockGalleryUri2, pair4.bottomUri)
     }
 
     @Test
-    fun testMissingCameraRecordingURIMapping() {
-        val top = VideoSectionState(source = VideoSource.LiveCameraFront)
-        val bottom = VideoSectionState(source = VideoSource.None)
-        val config = DualVideoCompositionConfig(topState = top, bottomState = bottom)
+    fun testStaleRecordingSessionInvalidation() {
+        val mockCameraUri = mock(Uri::class.java)
 
-        val isTopCam = isCameraSource(config.topState.source)
+        val initialConfig = DualVideoCompositionConfig(
+            topState = VideoSectionState(source = VideoSource.LiveCameraFront),
+            bottomState = VideoSectionState(source = VideoSource.None)
+        )
 
-        val primaryCamUri: String? = null
+        val session = RecordingSession(
+            topSource = VideoSource.LiveCameraFront,
+            bottomSource = VideoSource.None,
+            primaryCameraUri = mockCameraUri
+        )
 
-        val topUri = if (isTopCam) primaryCamUri else null
+        assertTrue(session.isValidForConfig(initialConfig))
 
-        assertNull(topUri)
+        // User changes top camera source to LiveCameraRear
+        val updatedConfig = initialConfig.copy(
+            topState = VideoSectionState(source = VideoSource.LiveCameraRear)
+        )
+
+        assertFalse(session.isValidForConfig(updatedConfig))
+
+        val resolved = CompositionSourceResolver.resolve(updatedConfig, session)
+        assertFalse(resolved.isValid)
+        assertNull(resolved.topUri)
     }
 
     @Test
