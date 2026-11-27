@@ -83,6 +83,7 @@ fun SocialWebView(
     var isLoading by remember { mutableStateOf(true) }
     var sslErrorOccurred by remember { mutableStateOf(false) }
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+    var lastRequestedSource by remember { mutableStateOf<BottomViewerSource?>(null) }
 
     DisposableEffect(source) {
         onDispose {
@@ -268,8 +269,9 @@ fun SocialWebView(
                         }
                     },
                     update = { webView ->
-                        // Re-navigate when platform URL changes
-                        if (webView.url != initialUrl && initialUrl.isNotEmpty()) {
+                        // Re-navigate ONLY when platform source changes, avoiding reload loops on web redirects
+                        if (lastRequestedSource != source && initialUrl.isNotEmpty()) {
+                            lastRequestedSource = source
                             sslErrorOccurred = false
                             isLoading = true
                             webView.loadUrl(initialUrl)

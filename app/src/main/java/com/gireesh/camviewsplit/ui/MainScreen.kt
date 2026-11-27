@@ -781,6 +781,7 @@ fun MainScreen() {
 private fun saveVideoToPublicGallery(context: Context, sourceFile: File, displayName: String): Uri? {
     val sourceLength = sourceFile.length()
     if (!sourceFile.exists() || sourceLength <= 0L) {
+        android.util.Log.e("MainScreen", "saveVideoToPublicGallery: sourceFile does not exist or is empty.")
         return null
     }
 
@@ -794,11 +795,15 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
     }
 
     val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
-        ?: return null
+    if (uri == null) {
+        android.util.Log.e("MainScreen", "saveVideoToPublicGallery: MediaStore insert returned null.")
+        return null
+    }
 
     var bytesCopied = 0L
     try {
         val outputStream = context.contentResolver.openOutputStream(uri) ?: run {
+            android.util.Log.e("MainScreen", "saveVideoToPublicGallery: openOutputStream returned null.")
             context.contentResolver.delete(uri, null, null)
             return null
         }
@@ -810,6 +815,7 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
         }
 
         if (bytesCopied != sourceLength) {
+            android.util.Log.e("MainScreen", "saveVideoToPublicGallery: bytesCopied ($bytesCopied) != sourceLength ($sourceLength).")
             context.contentResolver.delete(uri, null, null)
             return null
         }
@@ -819,6 +825,7 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
             contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
             val updatedRows = context.contentResolver.update(uri, contentValues, null, null)
             if (updatedRows <= 0) {
+                android.util.Log.e("MainScreen", "saveVideoToPublicGallery: IS_PENDING update returned 0 rows.")
                 context.contentResolver.delete(uri, null, null)
                 return null
             }
@@ -833,21 +840,10 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
 
         return uri
     } catch (e: Exception) {
-
-    } catch (e: Exception) {
-        e.printStackTrace()
+        android.util.Log.e("MainScreen", "saveVideoToPublicGallery failed: ${e.localizedMessage}", e)
         try {
             context.contentResolver.delete(uri, null, null)
         } catch (_: Exception) {}
         return null
     }
-
-    MediaScannerConnection.scanFile(
-        context,
-        arrayOf(sourceFile.absolutePath),
-        arrayOf("video/mp4"),
-        null
-    )
-
-    return uri
 }
