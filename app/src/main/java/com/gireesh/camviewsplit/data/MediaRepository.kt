@@ -1,9 +1,12 @@
 package com.gireesh.camviewsplit.data
 
+import android.app.RecoverableSecurityException
 import android.content.ContentUris
 import android.content.Context
+import android.content.IntentSender
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
 import com.gireesh.camviewsplit.model.LocalVideoItem
 import com.gireesh.camviewsplit.model.MediaItem
@@ -16,6 +19,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+
+sealed class DeleteResult {
+    object Success : DeleteResult()
+    data class PermissionRequired(val intentSender: IntentSender) : DeleteResult()
+    object Failed : DeleteResult()
+}
 
 class MediaRepository(private val context: Context) {
 
@@ -195,47 +204,73 @@ class MediaRepository(private val context: Context) {
     }
 
     suspend fun deleteMediaItem(item: MediaItem): Boolean = withContext(Dispatchers.IO) {
-        var deleted = false
+        when (val res = deleteMediaItemWithResult(item)) {
+            is DeleteResult.Success -> true
+            else -> false
+        }
+    }
+
+    suspend fun deleteMediaItemWithResult(item: MediaItem): DeleteResult = withContext(Dispatchers.IO) {
+        val uri = item.uri
         val fileProviderAuthority = "${context.packageName}.fileprovider"
 
-        try {
-            val uri = item.uri
-            when {
-                uri.authority == fileProviderAuthority || uri.scheme == "content" -> {
-                    val rows = try {
-                        context.contentResolver.delete(uri, null, null)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        0
+        if (uri.authority == fileProviderAuthority) {
+            val rows = try { context.contentResolver.delete(uri, null, null) } catch (_: Exception) { 0 }
+            return@withContext if (rows > 0) {
+                removeFromRepositoryState(item)
+                DeleteResult.Success
+            } else DeleteResult.Failed
+        }
+
+        if (item.isImported || uri.scheme == "file") {
+            val file = File(uri.path ?: "")
+            if (!file.exists()) {
+                removeFromRepositoryState(item)
+                return@withContext DeleteResult.Success
+            }
+            val dirPathWithSeparator = importedDir.canonicalPath + File.separator
+            if (file.isFile && file.canonicalPath.startsWith(dirPathWithSeparator)) {
+                return@withContext if (file.delete()) {
+                    removeFromRepositoryState(item)
+                    DeleteResult.Success
+                } else DeleteResult.Failed
+            }
+            return@withContext DeleteResult.Failed
+        }
+
+        if (uri.scheme == "content") {
+            try {
+                val rows = context.contentResolver.delete(uri, null, null)
+                return@withContext if (rows > 0) {
+                    removeFromRepositoryState(item)
+                    DeleteResult.Success
+                } else DeleteResult.Failed
+            } catch (e: Exception) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    if (e is RecoverableSecurityException) {
+                        return@withContext DeleteResult.PermissionRequired(e.userAction.actionIntent.intentSender)
                     }
-                    deleted = rows > 0
-                }
-                item.isImported || uri.scheme == "file" -> {
-                    val file = File(uri.path ?: "")
-                    if (file.exists()) {
-                        val dirPathWithSeparator = importedDir.canonicalPath + File.separator
-                        if (file.canonicalPath.startsWith(dirPathWithSeparator) || file.canonicalPath == importedDir.canonicalPath) {
-                            deleted = file.delete()
-                        }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        try {
+                            val pi = MediaStore.createDeleteRequest(context.contentResolver, listOf(uri))
+                            return@withContext DeleteResult.PermissionRequired(pi.intentSender)
+                        } catch (_: Exception) {}
                     }
                 }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            deleted = false
         }
 
-        if (deleted) {
-            val captured = loadCapturedFromIndex().toMutableList()
-            captured.removeAll { it.id == item.id }
-            saveCapturedToIndex(captured)
+        DeleteResult.Failed
+    }
 
-            val current = _mediaItems.value.toMutableList()
-            current.removeAll { it.id == item.id }
-            _mediaItems.value = current
-        }
+    fun removeFromRepositoryState(item: MediaItem) {
+        val captured = loadCapturedFromIndex().toMutableList()
+        captured.removeAll { it.id == item.id }
+        saveCapturedToIndex(captured)
 
-        deleted
+        val current = _mediaItems.value.toMutableList()
+        current.removeAll { it.id == item.id }
+        _mediaItems.value = current
     }
 
     fun parseCapturedMediaItem(obj: JSONObject): MediaItem? {

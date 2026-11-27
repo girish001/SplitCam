@@ -15,8 +15,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import com.gireesh.camviewsplit.data.DeleteResult
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -301,6 +303,31 @@ fun MainScreen() {
     var selectedVideo by remember { mutableStateOf<MediaItem?>(null) }
     var selectedPhoto by remember { mutableStateOf<MediaItem?>(null) }
 
+    // Pending Delete Consent State
+    var pendingDeleteItem by remember { mutableStateOf<MediaItem?>(null) }
+
+    val deleteConsentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+        onResult = { result ->
+            val item = pendingDeleteItem
+            if (result.resultCode == android.app.Activity.RESULT_OK && item != null) {
+                scope.launch(Dispatchers.IO) {
+                    mediaRepository.removeFromRepositoryState(item)
+                    withContext(Dispatchers.Main) {
+                        if (selectedVideo?.id == item.id) selectedVideo = null
+                        if (selectedPhoto?.id == item.id) selectedPhoto = null
+                        snackbarHostState.showSnackbar("Media deleted")
+                    }
+                }
+            } else {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Deletion permission denied.")
+                }
+            }
+            pendingDeleteItem = null
+        }
+    )
+
     // Camera / Export Error Handlers
     LaunchedEffect(cameraError) {
         cameraError?.let { msg ->
@@ -430,12 +457,20 @@ fun MainScreen() {
                                             isDeletingMedia = true
                                             scope.launch {
                                                 try {
-                                                    val deleted = mediaRepository.deleteMediaItem(item)
-                                                    if (deleted) {
-                                                        selectedVideo = null
-                                                        snackbarHostState.showSnackbar("Video deleted")
-                                                    } else {
-                                                        snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                                                    when (val res = mediaRepository.deleteMediaItemWithResult(item)) {
+                                                        is DeleteResult.Success -> {
+                                                            selectedVideo = null
+                                                            snackbarHostState.showSnackbar("Video deleted")
+                                                        }
+                                                        is DeleteResult.PermissionRequired -> {
+                                                            pendingDeleteItem = item
+                                                            deleteConsentLauncher.launch(
+                                                                IntentSenderRequest.Builder(res.intentSender).build()
+                                                            )
+                                                        }
+                                                        is DeleteResult.Failed -> {
+                                                            snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                                                        }
                                                     }
                                                 } finally {
                                                     isDeletingMedia = false
@@ -455,12 +490,20 @@ fun MainScreen() {
                                             isDeletingMedia = true
                                             scope.launch {
                                                 try {
-                                                    val deleted = mediaRepository.deleteMediaItem(item)
-                                                    if (deleted) {
-                                                        selectedPhoto = null
-                                                        snackbarHostState.showSnackbar("Photo deleted")
-                                                    } else {
-                                                        snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                                                    when (val res = mediaRepository.deleteMediaItemWithResult(item)) {
+                                                        is DeleteResult.Success -> {
+                                                            selectedPhoto = null
+                                                            snackbarHostState.showSnackbar("Photo deleted")
+                                                        }
+                                                        is DeleteResult.PermissionRequired -> {
+                                                            pendingDeleteItem = item
+                                                            deleteConsentLauncher.launch(
+                                                                IntentSenderRequest.Builder(res.intentSender).build()
+                                                            )
+                                                        }
+                                                        is DeleteResult.Failed -> {
+                                                            snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                                                        }
                                                     }
                                                 } finally {
                                                     isDeletingMedia = false
