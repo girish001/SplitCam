@@ -104,7 +104,7 @@ class DualVideoComposer(
                     val topMatrixTransform = MatrixTransformation { _ ->
                         CompositionTransformEngine.calculateExportMatrix(
                             sectionState = topState,
-                            sectionRatio = splitRatio,
+                            splitRatio = splitRatio,
                             isTopSection = true,
                             sourceDimensions = topDimensions,
                             outputWidthPx = outputWidth.toFloat(),
@@ -139,7 +139,7 @@ class DualVideoComposer(
                     val bottomMatrixTransform = MatrixTransformation { _ ->
                         CompositionTransformEngine.calculateExportMatrix(
                             sectionState = bottomState,
-                            sectionRatio = 1.0f - splitRatio,
+                            splitRatio = splitRatio,
                             isTopSection = false,
                             sourceDimensions = bottomDimensions,
                             outputWidthPx = outputWidth.toFloat(),

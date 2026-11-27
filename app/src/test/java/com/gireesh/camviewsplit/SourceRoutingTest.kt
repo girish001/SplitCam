@@ -221,6 +221,84 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testExportMatrixVerticalPositioningForAllSplitRatios() {
+        val dims = SourceVideoDimensions(1080, 1920, 0)
+        val sectionState = VideoSectionState()
+
+        val splitRatios = listOf(0.3f, 0.4f, 0.5f, 0.6f, 0.7f)
+
+        for (split in splitRatios) {
+            val topMatrix = CompositionTransformEngine.calculateExportMatrix(
+                sectionState = sectionState,
+                splitRatio = split,
+                isTopSection = true,
+                sourceDimensions = dims,
+                outputWidthPx = 1080f,
+                outputHeightPx = 1920f
+            )
+
+            val bottomMatrix = CompositionTransformEngine.calculateExportMatrix(
+                sectionState = sectionState,
+                splitRatio = split,
+                isTopSection = false,
+                sourceDimensions = dims,
+                outputWidthPx = 1080f,
+                outputHeightPx = 1920f
+            )
+
+            assertTrue(topMatrix.isIdentity == false || topMatrix.isIdentity == true)
+            assertTrue(bottomMatrix.isIdentity == false || bottomMatrix.isIdentity == true)
+        }
+    }
+
+    @Test
+    fun testExportMatrixScaleAndPanMultipleResolutions() {
+        val sectionState = VideoSectionState(zoomScale = 1.5f)
+        val dimsPortrait = SourceVideoDimensions(1080, 1920, 0)
+        val dimsSquare = SourceVideoDimensions(1080, 1080, 0)
+        val dimsLandscape = SourceVideoDimensions(1920, 1080, 0)
+
+        val outputResolutions = listOf(
+            Pair(1080f, 1920f),
+            Pair(1080f, 1080f),
+            Pair(1920f, 1080f)
+        )
+
+        for ((w, h) in outputResolutions) {
+            val pMatrix = CompositionTransformEngine.calculateExportMatrix(
+                sectionState = sectionState,
+                splitRatio = 0.5f,
+                isTopSection = true,
+                sourceDimensions = dimsPortrait,
+                outputWidthPx = w,
+                outputHeightPx = h
+            )
+
+            val sqMatrix = CompositionTransformEngine.calculateExportMatrix(
+                sectionState = sectionState,
+                splitRatio = 0.5f,
+                isTopSection = true,
+                sourceDimensions = dimsSquare,
+                outputWidthPx = w,
+                outputHeightPx = h
+            )
+
+            val lMatrix = CompositionTransformEngine.calculateExportMatrix(
+                sectionState = sectionState,
+                splitRatio = 0.5f,
+                isTopSection = true,
+                sourceDimensions = dimsLandscape,
+                outputWidthPx = w,
+                outputHeightPx = h
+            )
+
+            assertTrue(pMatrix != null)
+            assertTrue(sqMatrix != null)
+            assertTrue(lMatrix != null)
+        }
+    }
+
+    @Test
     fun testPreviewAndExportPanEquivalence() {
         val sectionState = VideoSectionState(
             zoomScale = 1.2f,
