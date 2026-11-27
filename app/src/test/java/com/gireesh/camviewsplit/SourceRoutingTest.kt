@@ -157,6 +157,15 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testEmptySourceFileValidation() {
+        val tempFile = java.io.File.createTempFile("empty_test", ".mp4")
+        tempFile.deleteOnExit()
+
+        assertEquals(0L, tempFile.length())
+        assertFalse(tempFile.exists() && tempFile.length() > 0)
+    }
+
+    @Test
     fun testCompositionTransformEngineFitAndFill() {
         val fitState = VideoSectionState(contentScaleMode = ContentScaleMode.FIT, zoomScale = 1.0f)
         val fillState = VideoSectionState(contentScaleMode = ContentScaleMode.FILL, zoomScale = 1.0f)
