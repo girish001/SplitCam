@@ -15,7 +15,7 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
-import androidx.camera.video.MediaStoreOutputOptions
+import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
@@ -226,21 +226,10 @@ class CameraCaptureManager(
 
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
         val displayName = "SplitCam_VID_$timestamp.mp4"
+        val tempFile = java.io.File(context.cacheDir, displayName)
 
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-            put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/SplitCam/")
-            }
-        }
-
-        val mediaStoreOutputOptions = MediaStoreOutputOptions.Builder(
-            context.contentResolver,
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        ).setContentValues(contentValues).build()
-
-        var pendingRecording = capture.output.prepareRecording(context, mediaStoreOutputOptions)
+        val fileOutputOptions = FileOutputOptions.Builder(tempFile).build()
+        var pendingRecording = capture.output.prepareRecording(context, fileOutputOptions)
 
         val hasAudioPermission = ContextCompat.checkSelfPermission(
             context,
@@ -270,17 +259,14 @@ class CameraCaptureManager(
                         activeRecording?.close()
                         activeRecording = null
 
-                        val outputUri = event.outputResults.outputUri
-                        val hasValidUri = outputUri != Uri.EMPTY
-
-                        if (!event.hasError()) {
-                            onSuccess(outputUri, displayName)
-                        } else if (hasValidUri && event.error != VideoRecordEvent.Finalize.ERROR_NO_VALID_DATA) {
-                            onSuccess(outputUri, displayName)
+                        if (!event.hasError() && tempFile.exists() && tempFile.length() > 0) {
+                            onSuccess(Uri.fromFile(tempFile), displayName)
+                        } else if (tempFile.exists() && tempFile.length() > 0 && event.error != VideoRecordEvent.Finalize.ERROR_NO_VALID_DATA) {
+                            onSuccess(Uri.fromFile(tempFile), displayName)
                         } else {
                             val friendlyMsg = when (event.error) {
                                 VideoRecordEvent.Finalize.ERROR_NO_VALID_DATA ->
-                                    "Recording was too short. Please record for at least 2-3 seconds."
+                                    "Recording was too short. Please record for at least 2 seconds."
                                 VideoRecordEvent.Finalize.ERROR_INSUFFICIENT_STORAGE ->
                                     "Insufficient storage to save video."
                                 VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED ->

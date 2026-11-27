@@ -80,9 +80,12 @@ class MediaRepository(private val context: Context) {
         val newItems = mutableListOf<MediaItem>()
         for (uri in uris) {
             try {
-                val mimeType = context.contentResolver.getType(uri) ?: ""
-                val isVideo = mimeType.startsWith("video") || uri.toString().contains("video", ignoreCase = true)
-                val ext = if (isVideo) ".mp4" else ".jpg"
+                val (originalName, detectedIsVideo) = resolveUriDetails(uri)
+                val ext = if (detectedIsVideo) {
+                    if (originalName.contains(".")) ".${originalName.substringAfterLast('.')}" else ".mp4"
+                } else {
+                    if (originalName.contains(".")) ".${originalName.substringAfterLast('.')}" else ".jpg"
+                }
                 val filename = "import_${System.currentTimeMillis()}_${(1000..9999).random()}$ext"
                 val targetFile = File(importedDir, filename)
 
@@ -95,14 +98,14 @@ class MediaRepository(private val context: Context) {
                 if (targetFile.exists() && targetFile.length() > 0) {
                     val fileUri = Uri.fromFile(targetFile)
                     var duration = 0L
-                    if (isVideo) {
+                    if (detectedIsVideo) {
                         duration = retrieveVideoDuration(fileUri)
                     }
                     val item = MediaItem(
                         id = fileUri.toString(),
                         uri = fileUri,
-                        isVideo = isVideo,
-                        displayName = filename,
+                        isVideo = detectedIsVideo,
+                        displayName = originalName.ifEmpty { filename },
                         dateAdded = System.currentTimeMillis(),
                         durationMs = duration,
                         isImported = true
@@ -119,6 +122,55 @@ class MediaRepository(private val context: Context) {
             current.addAll(0, newItems)
             _mediaItems.value = current.sortedByDescending { it.dateAdded }
         }
+    }
+
+    private fun resolveUriDetails(uri: Uri): Pair<String, Boolean> {
+        var name = ""
+        var isVideo = false
+
+        if (uri.scheme == "content") {
+            try {
+                context.contentResolver.query(
+                    uri,
+                    arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.MIME_TYPE),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                        if (nameIdx != -1) name = cursor.getString(nameIdx) ?: ""
+                        val mimeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+                        if (mimeIdx != -1) {
+                            val mime = cursor.getString(mimeIdx) ?: ""
+                            if (mime.startsWith("video", ignoreCase = true)) {
+                                isVideo = true
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (name.isEmpty()) {
+            name = uri.lastPathSegment ?: "imported_media_${System.currentTimeMillis()}"
+        }
+
+        val lower = name.lowercase(java.util.Locale.US)
+        val uriStr = uri.toString().lowercase(java.util.Locale.US)
+        if (lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".mov") ||
+            lower.endsWith(".avi") || lower.endsWith(".webm") || lower.endsWith(".3gp") ||
+            lower.endsWith(".m4v") || uriStr.contains("video", ignoreCase = true)
+        ) {
+            isVideo = true
+        }
+
+        val mimeType = context.contentResolver.getType(uri) ?: ""
+        if (mimeType.startsWith("video", ignoreCase = true)) {
+            isVideo = true
+        }
+
+        return Pair(name, isVideo)
     }
 
     suspend fun deleteMediaItem(item: MediaItem) = withContext(Dispatchers.IO) {

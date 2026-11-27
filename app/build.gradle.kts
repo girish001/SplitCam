@@ -52,10 +52,12 @@ dependencies {
     implementation(libs.androidx.camera.video)
     implementation(libs.androidx.camera.view)
 
-    // Media3 ExoPlayer
+    // Media3 ExoPlayer & Transformer
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.common)
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.effect)
 
     // Coil for Compose and video frame decoding
     implementation(libs.coil.compose)

@@ -93,9 +93,9 @@ fun GallerySection(
             .build()
     }
 
-    // Android Photo Picker launcher
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(),
+    // Document & Media File Picker (supports Gallery, Downloads, Files app, and PC transferred files)
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents(),
         onResult = { uris ->
             if (uris.isNotEmpty()) {
                 onImportMedia(uris)
@@ -149,9 +149,7 @@ fun GallerySection(
             // "Add More" Button
             Button(
                 onClick = {
-                    photoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                    )
+                    filePickerLauncher.launch("*/*")
                 },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = CyanPrimary,
@@ -218,9 +216,7 @@ fun GallerySection(
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = {
-                            photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                            )
+                            filePickerLauncher.launch("*/*")
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = TealAccent,
