@@ -201,37 +201,33 @@ class MediaRepository(private val context: Context) {
         try {
             val uri = item.uri
             when {
-                uri.authority == fileProviderAuthority -> {
-                    // SplitCam FileProvider URI: Resolve file inside allowed SplitCam Movies directories
-                    val moviesDir = File(
-                        android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES),
-                        "SplitCam"
-                    )
-                    val appMoviesDir = context.getExternalFilesDir("Movies")
-
-                    val candidate1 = File(moviesDir, item.displayName)
-                    val candidate2 = if (appMoviesDir != null) File(appMoviesDir, item.displayName) else null
-
-                    val fileToDelete = when {
-                        candidate1.exists() && candidate1.canonicalPath.startsWith(moviesDir.canonicalPath) -> candidate1
-                        candidate2 != null && candidate2.exists() && candidate2.canonicalPath.startsWith(appMoviesDir!!.canonicalPath) -> candidate2
-                        else -> null
+                uri.authority == fileProviderAuthority || uri.scheme == "content" -> {
+                    val rows = try {
+                        context.contentResolver.delete(uri, null, null)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        0
                     }
-
-                    if (fileToDelete != null) {
-                        deleted = fileToDelete.delete()
+                    if (rows > 0) {
+                        deleted = true
+                    } else {
+                        // Check if file is already missing on disk
+                        val path = uri.path
+                        if (path != null && !File(path).exists()) {
+                            deleted = true
+                        }
                     }
                 }
                 item.isImported || uri.scheme == "file" -> {
                     val file = File(uri.path ?: "")
-                    val allowedImportDir = importedDir.canonicalPath
-                    if (file.exists() && file.canonicalPath.startsWith(allowedImportDir)) {
-                        deleted = file.delete()
+                    if (!file.exists()) {
+                        deleted = true
+                    } else {
+                        val allowedImportDir = importedDir.canonicalPath
+                        if (file.canonicalPath.startsWith(allowedImportDir)) {
+                            deleted = file.delete()
+                        }
                     }
-                }
-                uri.scheme == "content" -> {
-                    val rows = context.contentResolver.delete(uri, null, null)
-                    deleted = rows > 0
                 }
             }
         } catch (e: Exception) {
@@ -239,14 +235,15 @@ class MediaRepository(private val context: Context) {
             deleted = false
         }
 
-        // Always remove from captured index and in-memory list
-        val captured = loadCapturedFromIndex().toMutableList()
-        captured.removeAll { it.id == item.id }
-        saveCapturedToIndex(captured)
+        if (deleted) {
+            val captured = loadCapturedFromIndex().toMutableList()
+            captured.removeAll { it.id == item.id }
+            saveCapturedToIndex(captured)
 
-        val current = _mediaItems.value.toMutableList()
-        current.removeAll { it.id == item.id }
-        _mediaItems.value = current
+            val current = _mediaItems.value.toMutableList()
+            current.removeAll { it.id == item.id }
+            _mediaItems.value = current
+        }
 
         deleted
     }

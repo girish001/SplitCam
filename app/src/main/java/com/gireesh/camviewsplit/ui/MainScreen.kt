@@ -426,9 +426,13 @@ fun MainScreen() {
                                     onBack = { selectedVideo = null },
                                     onDelete = { item ->
                                         scope.launch {
-                                            mediaRepository.deleteMediaItem(item)
-                                            selectedVideo = null
-                                            snackbarHostState.showSnackbar("Video deleted")
+                                            val deleted = mediaRepository.deleteMediaItem(item)
+                                            if (deleted) {
+                                                selectedVideo = null
+                                                snackbarHostState.showSnackbar("Video deleted")
+                                            } else {
+                                                snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                                            }
                                         }
                                     },
                                     modifier = Modifier.fillMaxSize()
@@ -440,9 +444,13 @@ fun MainScreen() {
                                     onBack = { selectedPhoto = null },
                                     onDelete = { item ->
                                         scope.launch {
-                                            mediaRepository.deleteMediaItem(item)
-                                            selectedPhoto = null
-                                            snackbarHostState.showSnackbar("Photo deleted")
+                                            val deleted = mediaRepository.deleteMediaItem(item)
+                                            if (deleted) {
+                                                selectedPhoto = null
+                                                snackbarHostState.showSnackbar("Photo deleted")
+                                            } else {
+                                                snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                                            }
                                         }
                                     },
                                     modifier = Modifier.fillMaxSize()

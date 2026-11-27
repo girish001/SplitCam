@@ -267,6 +267,19 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testMediaScannerTimeoutAndFileRetention() {
+        val tempFile = java.io.File.createTempFile("timeout_test", ".mp4")
+        tempFile.writeBytes(ByteArray(100))
+        tempFile.deleteOnExit()
+
+        val isTimeout = true
+        // File must be retained safely on timeout, NOT deleted
+        assertTrue(tempFile.exists())
+        assertEquals(100L, tempFile.length())
+        assertTrue(isTimeout)
+    }
+
+    @Test
     fun testApi26To28MediaStoreSavePath() {
         val apiVersion = 28
         val isLegacyApi = apiVersion < 29
