@@ -8,7 +8,6 @@ import android.net.http.SslError
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceError
-import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -27,12 +26,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,7 +55,6 @@ import com.gireesh.camviewsplit.ui.theme.CyanPrimary
 import com.gireesh.camviewsplit.ui.theme.DarkBorder
 import com.gireesh.camviewsplit.ui.theme.DarkSurface
 import com.gireesh.camviewsplit.ui.theme.DarkSurfaceElevated
-import com.gireesh.camviewsplit.ui.theme.TealAccent
 import com.gireesh.camviewsplit.ui.theme.TextPrimary
 import com.gireesh.camviewsplit.ui.theme.TextSecondary
 
@@ -64,6 +62,8 @@ import com.gireesh.camviewsplit.ui.theme.TextSecondary
 @Composable
 fun SocialWebView(
     source: BottomViewerSource,
+    isFullScreen: Boolean = false,
+    onToggleFullScreenClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -129,6 +129,22 @@ fun SocialWebView(
                 }
 
                 Spacer(modifier = Modifier.width(4.dp))
+
+                if (onToggleFullScreenClick != null) {
+                    IconButton(
+                        onClick = onToggleFullScreenClick,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isFullScreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                            contentDescription = "Fullscreen Toggle",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
 
                 IconButton(
                     onClick = {
@@ -209,7 +225,6 @@ fun SocialWebView(
                                 }
 
                                 override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
-                                    // Secure SSL Handling: Cancel on SSL error to prevent MITM attacks
                                     handler?.cancel()
                                     sslErrorOccurred = true
                                     isLoading = false

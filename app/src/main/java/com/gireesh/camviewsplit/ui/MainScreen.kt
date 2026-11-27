@@ -187,9 +187,7 @@ fun MainScreen() {
 
     // Persist Local Video Playlist whenever playlist or active index changes
     LaunchedEffect(localVideoPlaylist, currentLocalVideoIndex) {
-        if (localVideoPlaylist.isNotEmpty()) {
-            mediaRepository.saveLocalPlaylist(localVideoPlaylist, currentLocalVideoIndex)
-        }
+        mediaRepository.saveLocalPlaylist(localVideoPlaylist, currentLocalVideoIndex)
     }
 
     // Gallery media selection state (for picking video into top or bottom section)
@@ -813,7 +811,11 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             contentValues.clear()
             contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
-            context.contentResolver.update(uri, contentValues, null, null)
+            val updatedRows = context.contentResolver.update(uri, contentValues, null, null)
+            if (updatedRows <= 0) {
+                context.contentResolver.delete(uri, null, null)
+                return null
+            }
         }
 
     } catch (e: Exception) {

@@ -1,6 +1,7 @@
 package com.gireesh.camviewsplit.ui.components.viewer
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -47,12 +48,13 @@ fun AdjustableSplitLayout(
                     topContent()
                 }
 
-                // DRAGGABLE DIVIDER HANDLE
+                // DRAGGABLE DIVIDER HANDLE (Tap to Reset to 50:50)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(16.dp)
+                        .height(18.dp)
                         .background(if (isRecording) RecRed.copy(alpha = 0.3f) else CyanPrimary.copy(alpha = 0.2f))
+                        .clickable { onSplitRatioChange(0.5f) }
                         .pointerInput(totalHeightPx) {
                             detectDragGestures { change, dragAmount ->
                                 change.consume()

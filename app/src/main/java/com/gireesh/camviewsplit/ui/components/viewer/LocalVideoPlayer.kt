@@ -154,7 +154,7 @@ fun LocalVideoPlayer(
                 setMediaItem(MediaItem.fromUri(currentVideo.uri))
                 volume = if (isMuted) 0f else 1f
                 prepare()
-                playWhenReady = true
+                playWhenReady = currentUserPlaybackIntent
 
                 addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {

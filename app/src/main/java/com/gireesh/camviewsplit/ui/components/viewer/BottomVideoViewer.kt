@@ -94,6 +94,8 @@ fun BottomVideoViewer(
             BottomViewerSource.YOUTUBE -> {
                 SocialWebView(
                     source = activeSource,
+                    isFullScreen = isFullScreen,
+                    onToggleFullScreenClick = onToggleFullScreenClick,
                     modifier = Modifier.fillMaxSize()
                 )
             }
