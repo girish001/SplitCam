@@ -633,10 +633,16 @@ fun MainScreen() {
                                                                                 isVideo = true,
                                                                                 displayName = cleanFileName
                                                                             )
+                                                                            val isIndexedInGallery = savedUri.authority?.contains("media") == true
+                                                                            val message = if (isIndexedInGallery) {
+                                                                                "Saved to Gallery! (Movies/SplitCam/$cleanFileName)"
+                                                                            } else {
+                                                                                "Video saved to Movies/SplitCam/$cleanFileName (Gallery indexing pending)"
+                                                                            }
                                                                             withContext(Dispatchers.Main) {
                                                                                 lastExportedVideoUri = savedUri
                                                                                 selectedVideo = newItem
-                                                                                snackbarHostState.showSnackbar("Clean dual video saved to Movies/SplitCam/$cleanFileName")
+                                                                                snackbarHostState.showSnackbar(message)
                                                                             }
                                                                         }
                                                                     }

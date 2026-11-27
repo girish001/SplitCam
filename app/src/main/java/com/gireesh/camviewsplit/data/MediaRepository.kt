@@ -194,18 +194,52 @@ class MediaRepository(private val context: Context) {
         }
     }
 
-    suspend fun deleteMediaItem(item: MediaItem) = withContext(Dispatchers.IO) {
+    suspend fun deleteMediaItem(item: MediaItem): Boolean = withContext(Dispatchers.IO) {
+        var deleted = false
+        val fileProviderAuthority = "${context.packageName}.fileprovider"
+
         try {
-            if (item.isImported) {
-                val file = File(item.uri.path ?: "")
-                if (file.exists()) file.delete()
-            } else if (item.uri.scheme == "content") {
-                context.contentResolver.delete(item.uri, null, null)
+            val uri = item.uri
+            when {
+                uri.authority == fileProviderAuthority -> {
+                    // SplitCam FileProvider URI: Resolve file inside allowed SplitCam Movies directories
+                    val moviesDir = File(
+                        android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES),
+                        "SplitCam"
+                    )
+                    val appMoviesDir = context.getExternalFilesDir("Movies")
+
+                    val candidate1 = File(moviesDir, item.displayName)
+                    val candidate2 = if (appMoviesDir != null) File(appMoviesDir, item.displayName) else null
+
+                    val fileToDelete = when {
+                        candidate1.exists() && candidate1.canonicalPath.startsWith(moviesDir.canonicalPath) -> candidate1
+                        candidate2 != null && candidate2.exists() && candidate2.canonicalPath.startsWith(appMoviesDir!!.canonicalPath) -> candidate2
+                        else -> null
+                    }
+
+                    if (fileToDelete != null) {
+                        deleted = fileToDelete.delete()
+                    }
+                }
+                item.isImported || uri.scheme == "file" -> {
+                    val file = File(uri.path ?: "")
+                    val allowedImportDir = importedDir.canonicalPath
+                    if (file.exists() && file.canonicalPath.startsWith(allowedImportDir)) {
+                        deleted = file.delete()
+                    }
+                }
+                uri.scheme == "content" -> {
+                    val rows = context.contentResolver.delete(uri, null, null)
+                    deleted = rows > 0
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
+            deleted = false
         }
 
+        // Always remove from captured index and in-memory list
         val captured = loadCapturedFromIndex().toMutableList()
         captured.removeAll { it.id == item.id }
         saveCapturedToIndex(captured)
@@ -213,6 +247,8 @@ class MediaRepository(private val context: Context) {
         val current = _mediaItems.value.toMutableList()
         current.removeAll { it.id == item.id }
         _mediaItems.value = current
+
+        deleted
     }
 
     fun parseCapturedMediaItem(obj: JSONObject): MediaItem? {
