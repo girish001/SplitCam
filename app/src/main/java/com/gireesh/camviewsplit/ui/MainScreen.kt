@@ -811,16 +811,28 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
                 put(MediaStore.MediaColumns.DATA, publicFile.absolutePath)
             }
 
-            val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+            var resultUri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
 
-            MediaScannerConnection.scanFile(
-                context,
-                arrayOf(publicFile.absolutePath),
-                arrayOf("video/mp4"),
-                null
-            )
+            if (resultUri == null) {
+                MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(publicFile.absolutePath),
+                    arrayOf("video/mp4")
+                ) { _, uri ->
+                    if (uri != null) {
+                        resultUri = uri
+                    }
+                }
+            } else {
+                MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(publicFile.absolutePath),
+                    arrayOf("video/mp4"),
+                    null
+                )
+            }
 
-            return uri ?: Uri.fromFile(publicFile)
+            return resultUri ?: Uri.fromFile(publicFile)
         } catch (e: Exception) {
             android.util.Log.e("MainScreen", "saveVideoToPublicGallery (<API29) failed: ${e.localizedMessage}", e)
             return null

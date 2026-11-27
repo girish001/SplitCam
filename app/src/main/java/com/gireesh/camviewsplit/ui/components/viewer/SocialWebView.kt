@@ -230,6 +230,9 @@ fun SocialWebView(
                                     isUserGesture: Boolean,
                                     resultMsg: Message?
                                 ): Boolean {
+                                    if (resultMsg == null) return false
+                                    val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
+
                                     val tempWebView = WebView(ctx).apply {
                                         settings.javaScriptEnabled = true
                                         webViewClient = object : WebViewClient() {
@@ -240,14 +243,19 @@ fun SocialWebView(
                                                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)))
                                                     } catch (_: Exception) {}
                                                 }
-                                                destroy()
+                                                try { destroy() } catch (_: Exception) {}
                                                 return true
+                                            }
+
+                                            override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
+                                                handler?.cancel()
+                                                try { destroy() } catch (_: Exception) {}
                                             }
                                         }
                                     }
-                                    val transport = resultMsg?.obj as? WebView.WebViewTransport
-                                    transport?.webView = tempWebView
-                                    resultMsg?.sendToTarget()
+
+                                    transport.webView = tempWebView
+                                    resultMsg.sendToTarget()
                                     return true
                                 }
                             }

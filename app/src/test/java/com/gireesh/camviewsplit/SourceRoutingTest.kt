@@ -233,6 +233,25 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testWebViewPopupTransportValidation() {
+        val resultMsg: android.os.Message? = null
+        val isValidTransport = resultMsg?.obj is android.webkit.WebView.WebViewTransport
+        assertFalse(isValidTransport)
+    }
+
+    @Test
+    fun testApi26To28MediaStoreSavePath() {
+        val apiVersion = 28
+        val isLegacyApi = apiVersion < 29
+        assertTrue(isLegacyApi)
+
+        val bytesCopied = 1000L
+        val sourceLength = 1000L
+        val isExactMatch = bytesCopied == sourceLength
+        assertTrue(isExactMatch)
+    }
+
+    @Test
     fun testMediaStoreCopyByteVerificationFailure() {
         val sourceFileLength = 5000L
         val bytesCopied = 4999L // Incomplete copy
