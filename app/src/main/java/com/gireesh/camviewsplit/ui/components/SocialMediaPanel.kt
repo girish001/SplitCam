@@ -45,7 +45,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -345,27 +347,34 @@ fun SocialMediaPanel(
                 val rawAspect = validationResult.width.toFloat() / validationResult.height.coerceAtLeast(1).toFloat()
                 val safeAspect = if (rawAspect.isFinite() && rawAspect > 0f) rawAspect.coerceIn(0.2f, 5.0f) else 0.5625f
 
-                val topTransform = CompositionTransformEngine.calculateTransform(
-                    sectionState = config.topState,
-                    sourceDimensions = topDims,
-                    viewportWidthPx = validationResult.width.toFloat(),
-                    viewportHeightPx = validationResult.height.toFloat() * config.splitRatio
-                )
-
-                val bottomTransform = CompositionTransformEngine.calculateTransform(
-                    sectionState = config.bottomState,
-                    sourceDimensions = bottomDims,
-                    viewportWidthPx = validationResult.width.toFloat(),
-                    viewportHeightPx = validationResult.height.toFloat() * (1.0f - config.splitRatio)
-                )
-
-                Box(
+                BoxWithConstraints(
                     modifier = Modifier
                         .aspectRatio(safeAspect, matchHeightConstraintsFirst = true)
                         .clip(RoundedCornerShape(8.dp))
                         .background(DarkSurfaceElevated)
                         .border(1.dp, CyanPrimary, RoundedCornerShape(8.dp))
                 ) {
+                    val previewWidthPx = with(LocalDensity.current) { constraints.maxWidth.toFloat() }
+                    val previewHeightPx = with(LocalDensity.current) { constraints.maxHeight.toFloat() }
+
+                    val topTransform = CompositionTransformEngine.calculateTransform(
+                        sectionState = config.topState,
+                        sourceDimensions = topDims,
+                        viewportWidthPx = previewWidthPx,
+                        viewportHeightPx = previewHeightPx * config.splitRatio,
+                        interactiveViewportWidthPx = 1080f,
+                        interactiveViewportHeightPx = 1920f * config.splitRatio
+                    )
+
+                    val bottomTransform = CompositionTransformEngine.calculateTransform(
+                        sectionState = config.bottomState,
+                        sourceDimensions = bottomDims,
+                        viewportWidthPx = previewWidthPx,
+                        viewportHeightPx = previewHeightPx * (1.0f - config.splitRatio),
+                        interactiveViewportWidthPx = 1080f,
+                        interactiveViewportHeightPx = 1920f * (1.0f - config.splitRatio)
+                    )
+
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Top Section Real Media Preview
                         Box(
@@ -376,27 +385,35 @@ fun SocialMediaPanel(
                             contentAlignment = Alignment.Center
                         ) {
                             if (topMediaUri != null) {
-                                val topRequest = remember(topMediaUri) {
-                                    ImageRequest.Builder(context)
-                                        .data(topMediaUri)
-                                        .videoFrameMillis(1000)
-                                        .crossfade(true)
-                                        .build()
+                                if (topDims.isValid) {
+                                    val topRequest = remember(topMediaUri) {
+                                        ImageRequest.Builder(context)
+                                            .data(topMediaUri)
+                                            .videoFrameMillis(1000)
+                                            .crossfade(true)
+                                            .build()
+                                    }
+                                    SubcomposeAsyncImage(
+                                        model = topRequest,
+                                        imageLoader = imageLoader,
+                                        contentDescription = "Top Section Preview",
+                                        contentScale = ContentScale.FillBounds,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .graphicsLayer(
+                                                scaleX = topTransform.scaleX,
+                                                scaleY = topTransform.scaleY,
+                                                translationX = topTransform.composePanX,
+                                                translationY = topTransform.composePanY
+                                            )
+                                    )
+                                } else {
+                                    Text(
+                                        text = "Loading media metadata...",
+                                        color = TextSecondary,
+                                        fontSize = 10.sp
+                                    )
                                 }
-                                SubcomposeAsyncImage(
-                                    model = topRequest,
-                                    imageLoader = imageLoader,
-                                    contentDescription = "Top Section Preview",
-                                    contentScale = ContentScale.FillBounds,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer(
-                                            scaleX = topTransform.scaleX,
-                                            scaleY = topTransform.scaleY,
-                                            translationX = topTransform.composePanX / 4f,
-                                            translationY = topTransform.composePanY / 4f
-                                        )
-                                )
                             } else {
                                 Text(
                                     text = "TOP [${if (config.topState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",
@@ -421,27 +438,35 @@ fun SocialMediaPanel(
                             contentAlignment = Alignment.Center
                         ) {
                             if (bottomMediaUri != null) {
-                                val bottomRequest = remember(bottomMediaUri) {
-                                    ImageRequest.Builder(context)
-                                        .data(bottomMediaUri)
-                                        .videoFrameMillis(1000)
-                                        .crossfade(true)
-                                        .build()
+                                if (bottomDims.isValid) {
+                                    val bottomRequest = remember(bottomMediaUri) {
+                                        ImageRequest.Builder(context)
+                                            .data(bottomMediaUri)
+                                            .videoFrameMillis(1000)
+                                            .crossfade(true)
+                                            .build()
+                                    }
+                                    SubcomposeAsyncImage(
+                                        model = bottomRequest,
+                                        imageLoader = imageLoader,
+                                        contentDescription = "Bottom Section Preview",
+                                        contentScale = ContentScale.FillBounds,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .graphicsLayer(
+                                                scaleX = bottomTransform.scaleX,
+                                                scaleY = bottomTransform.scaleY,
+                                                translationX = bottomTransform.composePanX,
+                                                translationY = bottomTransform.composePanY
+                                            )
+                                    )
+                                } else {
+                                    Text(
+                                        text = "Loading media metadata...",
+                                        color = TextSecondary,
+                                        fontSize = 10.sp
+                                    )
                                 }
-                                SubcomposeAsyncImage(
-                                    model = bottomRequest,
-                                    imageLoader = imageLoader,
-                                    contentDescription = "Bottom Section Preview",
-                                    contentScale = ContentScale.FillBounds,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer(
-                                            scaleX = bottomTransform.scaleX,
-                                            scaleY = bottomTransform.scaleY,
-                                            translationX = bottomTransform.composePanX / 4f,
-                                            translationY = bottomTransform.composePanY / 4f
-                                        )
-                                )
                             } else {
                                 Text(
                                     text = "BOTTOM [${if (config.bottomState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",

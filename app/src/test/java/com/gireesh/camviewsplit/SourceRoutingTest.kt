@@ -228,15 +228,17 @@ class SourceRoutingTest {
         )
         val dims = SourceVideoDimensions(1080, 1920, 0)
 
+        // 1. Compose Preview Transform Parameters
         val previewTransform = CompositionTransformEngine.calculateTransform(
             sectionState = sectionState,
             sourceDimensions = dims,
-            viewportWidthPx = 1080f,
-            viewportHeightPx = 960f,
+            viewportWidthPx = 360f,
+            viewportHeightPx = 320f,
             interactiveViewportWidthPx = 1080f,
             interactiveViewportHeightPx = 960f
         )
 
+        // 2. Export Canvas Parameters
         val exportTransform = CompositionTransformEngine.calculateTransform(
             sectionState = sectionState,
             sourceDimensions = dims,
@@ -246,8 +248,11 @@ class SourceRoutingTest {
             interactiveViewportHeightPx = 960f
         )
 
+        // Compare preview scale factor with export scale factor
         assertEquals(previewTransform.scaleX, exportTransform.scaleX, 0.001f)
         assertEquals(previewTransform.scaleY, exportTransform.scaleY, 0.001f)
+
+        // Compare preview normalized pan fraction with export normalized pan fraction
         assertEquals(previewTransform.normPanX, exportTransform.normPanX, 0.001f)
         assertEquals(previewTransform.normPanY, exportTransform.normPanY, 0.001f)
     }

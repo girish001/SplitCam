@@ -61,15 +61,17 @@ android {
                 this.keyAlias = keyAlias
                 this.keyPassword = keyPassword
             } else {
-                val missingStr = missingConfigs.joinToString(", ")
                 val gradleTasks = gradle.startParameter.taskNames.joinToString(" ")
-                if (gradleTasks.contains("release", ignoreCase = true)) {
-                    logger.error("RELEASE BUILD ERROR: Missing required release signing credentials: $missingStr. Define them in local.properties or environment variables.")
+                val isReleaseRequested = gradleTasks.contains("release", ignoreCase = true) ||
+                        gradleTasks.contains("bundle", ignoreCase = true) ||
+                        gradleTasks.contains("publish", ignoreCase = true)
+
+                if (isReleaseRequested) {
+                    throw GradleException(
+                        "RELEASE BUILD FAILED: Missing required release signing credentials: ${missingConfigs.joinToString(", ")}. " +
+                        "Please define KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD in local.properties or environment variables."
+                    )
                 }
-                storeFile = rootProject.file("missing_release_keystore.jks")
-                storePassword = "missing_password"
-                this.keyAlias = "missing_alias"
-                this.keyPassword = "missing_password"
             }
         }
     }
