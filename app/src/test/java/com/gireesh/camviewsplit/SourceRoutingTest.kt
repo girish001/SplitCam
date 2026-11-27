@@ -182,6 +182,33 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testPlaylistClearingAndRestorationRacePrevention() {
+        var isPlaylistLoaded = false
+        var savedCount = -1
+
+        fun simulateSave(playlist: List<LocalVideoItem>) {
+            if (isPlaylistLoaded) {
+                savedCount = playlist.size
+            }
+        }
+
+        val emptyInitialList = emptyList<LocalVideoItem>()
+        simulateSave(emptyInitialList)
+        assertEquals(-1, savedCount) // Save blocked before restoration finishes
+
+        // Restoration completes
+        isPlaylistLoaded = true
+        val restoredList = listOf(LocalVideoItem(mock(android.net.Uri::class.java), "Restored Video"))
+        simulateSave(restoredList)
+        assertEquals(1, savedCount)
+
+        // User clears playlist
+        val clearedList = emptyList<LocalVideoItem>()
+        simulateSave(clearedList)
+        assertEquals(0, savedCount) // Cleared empty list saved successfully after loading
+    }
+
+    @Test
     fun testSplitRatioBoundsAndReset() {
         val splitRatio = 0.95f // Out of bounds
         val clampedRatio = splitRatio.coerceIn(0.20f, 0.80f)

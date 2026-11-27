@@ -5,9 +5,12 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
+import android.os.Message
+import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
-import android.webkit.WebResourceRequest
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -210,7 +213,31 @@ fun SocialWebView(
                                 mediaPlaybackRequiresUserGesture = false
                                 useWideViewPort = true
                                 loadWithOverviewMode = true
+                                setSupportMultipleWindows(true)
                                 userAgentString = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+                            }
+
+                            val cookieMgr = CookieManager.getInstance()
+                            cookieMgr.setAcceptCookie(true)
+                            cookieMgr.setAcceptThirdPartyCookies(this, true)
+
+                            webChromeClient = object : WebChromeClient() {
+                                override fun onCreateWindow(
+                                    view: WebView?,
+                                    isDialog: Boolean,
+                                    isUserGesture: Boolean,
+                                    resultMsg: Message?
+                                ): Boolean {
+                                    val href = view?.handler?.obtainMessage()
+                                    view?.requestFocusNodeHref(href)
+                                    val url = href?.data?.getString("url")
+                                    if (!url.isNullOrEmpty()) {
+                                        try {
+                                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                        } catch (_: Exception) {}
+                                    }
+                                    return false
+                                }
                             }
 
                             webViewClient = object : WebViewClient() {
@@ -238,6 +265,14 @@ fun SocialWebView(
 
                             loadUrl(initialUrl)
                             webViewInstance = this
+                        }
+                    },
+                    update = { webView ->
+                        // Re-navigate when platform URL changes
+                        if (webView.url != initialUrl && initialUrl.isNotEmpty()) {
+                            sslErrorOccurred = false
+                            isLoading = true
+                            webView.loadUrl(initialUrl)
                         }
                     },
                     modifier = Modifier.fillMaxSize()

@@ -176,6 +176,9 @@ fun MainScreen() {
         )
     }
 
+    // Playlist restoration completion flag to prevent initial empty state race
+    var isPlaylistLoaded by remember { mutableStateOf(false) }
+
     // Restore Local Video Playlist from persistence
     LaunchedEffect(Unit) {
         val (savedList, savedIdx) = mediaRepository.loadLocalPlaylist()
@@ -183,11 +186,14 @@ fun MainScreen() {
             localVideoPlaylist = savedList
             currentLocalVideoIndex = savedIdx
         }
+        isPlaylistLoaded = true
     }
 
-    // Persist Local Video Playlist whenever playlist or active index changes
-    LaunchedEffect(localVideoPlaylist, currentLocalVideoIndex) {
-        mediaRepository.saveLocalPlaylist(localVideoPlaylist, currentLocalVideoIndex)
+    // Persist Local Video Playlist ONLY AFTER initial restoration has completed
+    LaunchedEffect(localVideoPlaylist, currentLocalVideoIndex, isPlaylistLoaded) {
+        if (isPlaylistLoaded) {
+            mediaRepository.saveLocalPlaylist(localVideoPlaylist, currentLocalVideoIndex)
+        }
     }
 
     // Gallery media selection state (for picking video into top or bottom section)
@@ -803,7 +809,7 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
             }
         }
 
-        if (bytesCopied < sourceLength) {
+        if (bytesCopied != sourceLength) {
             context.contentResolver.delete(uri, null, null)
             return null
         }
@@ -816,7 +822,17 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
                 context.contentResolver.delete(uri, null, null)
                 return null
             }
+        } else {
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(sourceFile.absolutePath),
+                arrayOf("video/mp4"),
+                null
+            )
         }
+
+        return uri
+    } catch (e: Exception) {
 
     } catch (e: Exception) {
         e.printStackTrace()
