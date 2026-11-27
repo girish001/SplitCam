@@ -846,20 +846,19 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
                 } catch (_: Exception) {}
             }
 
-            // Verify final URI is a valid content:// URI
+            // Verify final URI is a valid content:// URI that can be opened and has exact matching file size
             if (resultUri != null && resultUri?.scheme == "content") {
                 val pfd = try { context.contentResolver.openFileDescriptor(resultUri!!, "r") } catch (_: Exception) { null }
                 if (pfd != null) {
+                    val savedSize = pfd.statSize
                     pfd.close()
-                    return resultUri
+                    if (savedSize == sourceLength) {
+                        return resultUri
+                    }
                 }
             }
 
-            if (resultUri != null && resultUri?.scheme == "content") {
-                return resultUri
-            }
-
-            // Failure path: Clean up file if no valid content:// URI was generated
+            // Failure path: Clean up file if no valid content:// URI with matching size was generated
             if (publicFile.exists()) publicFile.delete()
             return null
         } catch (e: Exception) {
