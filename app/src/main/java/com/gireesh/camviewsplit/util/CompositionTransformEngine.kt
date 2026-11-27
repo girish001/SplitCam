@@ -4,39 +4,87 @@ import android.graphics.Matrix
 import com.gireesh.camviewsplit.model.ContentScaleMode
 import com.gireesh.camviewsplit.model.VideoSectionState
 
+data class SectionScaleResult(
+    val scaleX: Float,
+    val scaleY: Float,
+    val normPanX: Float,
+    val normPanY: Float
+)
+
 object CompositionTransformEngine {
 
     /**
-     * Calculates the exact matrix transformation for a video section in NDC space.
+     * Calculates the aspect-ratio scale factors and normalized pan offsets for a video section.
      */
-    fun calculateSectionMatrix(
+    fun calculateScaleAndPan(
+        sectionState: VideoSectionState,
+        sourceWidth: Float = 1080f,
+        sourceHeight: Float = 1920f,
+        viewportWidth: Float = 1080f,
+        viewportHeight: Float = 1920f
+    ): SectionScaleResult {
+        val srcAR = (sourceWidth / sourceHeight.coerceAtLeast(1f)).coerceIn(0.1f, 10.0f)
+        val secAR = (viewportWidth / viewportHeight.coerceAtLeast(1f)).coerceIn(0.1f, 10.0f)
+
+        val aspectScaleX: Float
+        val aspectScaleY: Float
+
+        if (sectionState.contentScaleMode == ContentScaleMode.FILL) {
+            aspectScaleX = maxOf(1.0f, srcAR / secAR)
+            aspectScaleY = maxOf(1.0f, secAR / srcAR)
+        } else { // FIT
+            aspectScaleX = minOf(1.0f, srcAR / secAR)
+            aspectScaleY = minOf(1.0f, secAR / srcAR)
+        }
+
+        val zoom = sectionState.zoomScale.coerceIn(0.5f, 5.0f)
+        val finalScaleX = aspectScaleX * zoom
+        val finalScaleY = aspectScaleY * zoom
+
+        val normPanX = (sectionState.panOffset.x / viewportWidth.coerceAtLeast(1f)).coerceIn(-1.0f, 1.0f)
+        val normPanY = (sectionState.panOffset.y / viewportHeight.coerceAtLeast(1f)).coerceIn(-1.0f, 1.0f)
+
+        return SectionScaleResult(
+            scaleX = finalScaleX,
+            scaleY = finalScaleY,
+            normPanX = normPanX,
+            normPanY = normPanY
+        )
+    }
+
+    /**
+     * Calculates the exact Matrix transformation for Media3 Transformer / OpenGL NDC space.
+     */
+    fun calculateExportMatrix(
         sectionState: VideoSectionState,
         sectionRatio: Float,
         isTopSection: Boolean,
-        viewportWidthPx: Float = 1080f,
-        viewportHeightPx: Float = 1920f
+        sourceWidth: Float = 1080f,
+        sourceHeight: Float = 1920f,
+        outputWidth: Float = 1080f,
+        outputHeight: Float = 1920f
     ): Matrix {
         val matrix = Matrix()
+        val sectionHeightPx = outputHeight * sectionRatio.coerceIn(0.15f, 0.85f)
 
-        val fitScaleFactor = if (sectionState.contentScaleMode == ContentScaleMode.FIT) 0.88f else 1.0f
-        val zoomScale = (sectionState.zoomScale * fitScaleFactor).coerceAtLeast(0.1f)
+        val params = calculateScaleAndPan(
+            sectionState = sectionState,
+            sourceWidth = sourceWidth,
+            sourceHeight = sourceHeight,
+            viewportWidth = outputWidth,
+            viewportHeight = sectionHeightPx
+        )
 
-        // Normalize gesture pixel pan to NDC space [-1.0, 1.0]
-        val normPanX = (sectionState.panOffset.x / viewportWidthPx) * 2.0f
-        val normPanY = (-sectionState.panOffset.y / viewportHeightPx) * 2.0f
+        matrix.postScale(params.scaleX, params.scaleY * sectionRatio)
 
-        val clampedPanX = normPanX.coerceIn(-1.5f, 1.5f)
-        val clampedPanY = normPanY.coerceIn(-1.5f, 1.5f)
-
-        matrix.postScale(zoomScale, zoomScale * sectionRatio)
-
-        val translateY = if (isTopSection) {
-            (1.0f - sectionRatio) + clampedPanY
+        val translateNDC_X = params.normPanX * 2.0f
+        val translateNDC_Y = if (isTopSection) {
+            (1.0f - sectionRatio) - (params.normPanY * 2.0f)
         } else {
-            -sectionRatio + clampedPanY
+            -sectionRatio - (params.normPanY * 2.0f)
         }
 
-        matrix.postTranslate(clampedPanX, translateY)
+        matrix.postTranslate(translateNDC_X, translateNDC_Y)
         return matrix
     }
 }

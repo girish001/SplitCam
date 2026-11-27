@@ -327,103 +327,113 @@ fun SocialMediaPanel(
                 .border(1.dp, TealAccent.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
-            val targetAspect = validationResult.width.toFloat() / validationResult.height.coerceAtLeast(1).toFloat()
+            if (validationResult.isValid) {
+                val rawAspect = validationResult.width.toFloat() / validationResult.height.coerceAtLeast(1).toFloat()
+                val safeAspect = if (rawAspect.isFinite() && rawAspect > 0f) rawAspect.coerceIn(0.2f, 5.0f) else 0.5625f
 
-            Box(
-                modifier = Modifier
-                    .aspectRatio(targetAspect, matchHeightConstraintsFirst = true)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(DarkSurfaceElevated)
-                    .border(1.dp, CyanPrimary, RoundedCornerShape(8.dp))
-            ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    // Top Section Real Media Preview
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(config.splitRatio.coerceIn(0.15f, 0.85f))
-                            .background(DarkSurface),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (topMediaUri != null) {
-                            val topScale = if (config.topState.contentScaleMode == ContentScaleMode.FILL) ContentScale.Crop else ContentScale.Fit
-                            val topRequest = remember(topMediaUri) {
-                                ImageRequest.Builder(context)
-                                    .data(topMediaUri)
-                                    .videoFrameMillis(1000)
-                                    .crossfade(true)
-                                    .build()
+                Box(
+                    modifier = Modifier
+                        .aspectRatio(safeAspect, matchHeightConstraintsFirst = true)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(DarkSurfaceElevated)
+                        .border(1.dp, CyanPrimary, RoundedCornerShape(8.dp))
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Top Section Real Media Preview
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(config.splitRatio.coerceIn(0.15f, 0.85f))
+                                .background(DarkSurface),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (topMediaUri != null) {
+                                val topScale = if (config.topState.contentScaleMode == ContentScaleMode.FILL) ContentScale.Crop else ContentScale.Fit
+                                val topRequest = remember(topMediaUri) {
+                                    ImageRequest.Builder(context)
+                                        .data(topMediaUri)
+                                        .videoFrameMillis(1000)
+                                        .crossfade(true)
+                                        .build()
+                                }
+                                SubcomposeAsyncImage(
+                                    model = topRequest,
+                                    imageLoader = imageLoader,
+                                    contentDescription = "Top Section Preview",
+                                    contentScale = topScale,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer(
+                                            scaleX = config.topState.zoomScale,
+                                            scaleY = config.topState.zoomScale,
+                                            translationX = (config.topState.panOffset.x / 4f).coerceIn(-200f, 200f),
+                                            translationY = (config.topState.panOffset.y / 4f).coerceIn(-200f, 200f)
+                                        )
+                                )
+                            } else {
+                                Text(
+                                    text = "TOP [${if (config.topState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",
+                                    color = CyanPrimary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
-                            SubcomposeAsyncImage(
-                                model = topRequest,
-                                imageLoader = imageLoader,
-                                contentDescription = "Top Section Preview",
-                                contentScale = topScale,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer(
-                                        scaleX = config.topState.zoomScale,
-                                        scaleY = config.topState.zoomScale,
-                                        translationX = config.topState.panOffset.x / 4f,
-                                        translationY = config.topState.panOffset.y / 4f
-                                    )
-                            )
-                        } else {
-                            Text(
-                                text = "TOP [${if (config.topState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",
-                                color = CyanPrimary,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
                         }
-                    }
 
-                    // Divider Line
-                    if (config.showDivider) {
-                        HorizontalDivider(thickness = 2.dp, color = CyanPrimary)
-                    }
+                        // Divider Line
+                        if (config.showDivider) {
+                            HorizontalDivider(thickness = 2.dp, color = CyanPrimary)
+                        }
 
-                    // Bottom Section Real Media Preview
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight((1.0f - config.splitRatio).coerceIn(0.15f, 0.85f))
-                            .background(DarkSurface),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (bottomMediaUri != null) {
-                            val bottomScale = if (config.bottomState.contentScaleMode == ContentScaleMode.FILL) ContentScale.Crop else ContentScale.Fit
-                            val bottomRequest = remember(bottomMediaUri) {
-                                ImageRequest.Builder(context)
-                                    .data(bottomMediaUri)
-                                    .videoFrameMillis(1000)
-                                    .crossfade(true)
-                                    .build()
+                        // Bottom Section Real Media Preview
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight((1.0f - config.splitRatio).coerceIn(0.15f, 0.85f))
+                                .background(DarkSurface),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (bottomMediaUri != null) {
+                                val bottomScale = if (config.bottomState.contentScaleMode == ContentScaleMode.FILL) ContentScale.Crop else ContentScale.Fit
+                                val bottomRequest = remember(bottomMediaUri) {
+                                    ImageRequest.Builder(context)
+                                        .data(bottomMediaUri)
+                                        .videoFrameMillis(1000)
+                                        .crossfade(true)
+                                        .build()
+                                }
+                                SubcomposeAsyncImage(
+                                    model = bottomRequest,
+                                    imageLoader = imageLoader,
+                                    contentDescription = "Bottom Section Preview",
+                                    contentScale = bottomScale,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer(
+                                            scaleX = config.bottomState.zoomScale,
+                                            scaleY = config.bottomState.zoomScale,
+                                            translationX = (config.bottomState.panOffset.x / 4f).coerceIn(-200f, 200f),
+                                            translationY = (config.bottomState.panOffset.y / 4f).coerceIn(-200f, 200f)
+                                        )
+                                )
+                            } else {
+                                Text(
+                                    text = "BOTTOM [${if (config.bottomState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",
+                                    color = TealAccent,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
-                            SubcomposeAsyncImage(
-                                model = bottomRequest,
-                                imageLoader = imageLoader,
-                                contentDescription = "Bottom Section Preview",
-                                contentScale = bottomScale,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer(
-                                        scaleX = config.bottomState.zoomScale,
-                                        scaleY = config.bottomState.zoomScale,
-                                        translationX = config.bottomState.panOffset.x / 4f,
-                                        translationY = config.bottomState.panOffset.y / 4f
-                                    )
-                            )
-                        } else {
-                            Text(
-                                text = "BOTTOM [${if (config.bottomState.contentScaleMode == ContentScaleMode.FILL) "FILL" else "FIT"}]",
-                                color = TealAccent,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
                         }
                     }
                 }
+            } else {
+                Text(
+                    text = "Enter valid dimensions above to preview output framing",
+                    color = Color.Gray,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
 

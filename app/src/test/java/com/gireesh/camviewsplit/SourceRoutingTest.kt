@@ -1,11 +1,12 @@
 package com.gireesh.camviewsplit
 
-import android.net.Uri
+import com.gireesh.camviewsplit.model.ContentScaleMode
 import com.gireesh.camviewsplit.model.DualVideoCompositionConfig
 import com.gireesh.camviewsplit.model.RecordingSession
 import com.gireesh.camviewsplit.model.VideoSectionState
 import com.gireesh.camviewsplit.model.VideoSource
 import com.gireesh.camviewsplit.util.CompositionSourceResolver
+import com.gireesh.camviewsplit.util.CompositionTransformEngine
 import com.gireesh.camviewsplit.util.ResolutionValidator
 import com.gireesh.camviewsplit.util.SocialPlatform
 import org.junit.Assert.assertEquals
@@ -63,10 +64,10 @@ class SourceRoutingTest {
 
     @Test
     fun testProductionSourceResolverAllFourCombinations() {
-        val mockCameraUri1 = mock(Uri::class.java)
-        val mockCameraUri2 = mock(Uri::class.java)
-        val mockGalleryUri1 = mock(Uri::class.java)
-        val mockGalleryUri2 = mock(Uri::class.java)
+        val mockCameraUri1 = mock(android.net.Uri::class.java)
+        val mockCameraUri2 = mock(android.net.Uri::class.java)
+        val mockGalleryUri1 = mock(android.net.Uri::class.java)
+        val mockGalleryUri2 = mock(android.net.Uri::class.java)
 
         // 1. Camera + Camera
         val config1 = DualVideoCompositionConfig(
@@ -127,7 +128,7 @@ class SourceRoutingTest {
 
     @Test
     fun testStaleRecordingSessionInvalidation() {
-        val mockCameraUri = mock(Uri::class.java)
+        val mockCameraUri = mock(android.net.Uri::class.java)
 
         val initialConfig = DualVideoCompositionConfig(
             topState = VideoSectionState(source = VideoSource.LiveCameraFront),
@@ -152,6 +153,47 @@ class SourceRoutingTest {
         val resolved = CompositionSourceResolver.resolve(updatedConfig, session)
         assertFalse(resolved.isValid)
         assertNull(resolved.topUri)
+    }
+
+    @Test
+    fun testCompositionTransformEngineFitAndFill() {
+        val fitState = VideoSectionState(contentScaleMode = ContentScaleMode.FIT, zoomScale = 1.0f)
+        val fillState = VideoSectionState(contentScaleMode = ContentScaleMode.FILL, zoomScale = 1.0f)
+
+        val fitParams = CompositionTransformEngine.calculateScaleAndPan(
+            sectionState = fitState,
+            sourceWidth = 1920f,
+            sourceHeight = 1080f,
+            viewportWidth = 1080f,
+            viewportHeight = 960f
+        )
+
+        val fillParams = CompositionTransformEngine.calculateScaleAndPan(
+            sectionState = fillState,
+            sourceWidth = 1920f,
+            sourceHeight = 1080f,
+            viewportWidth = 1080f,
+            viewportHeight = 960f
+        )
+
+        assertTrue(fillParams.scaleX >= fitParams.scaleX)
+        assertTrue(fillParams.scaleY >= fitParams.scaleY)
+    }
+
+    @Test
+    fun testCompositionTransformEngineExtremePanClamping() {
+        val extremePanState = VideoSectionState(
+            panOffset = androidx.compose.ui.geometry.Offset(10000f, -10000f)
+        )
+
+        val params = CompositionTransformEngine.calculateScaleAndPan(
+            sectionState = extremePanState,
+            viewportWidth = 1080f,
+            viewportHeight = 960f
+        )
+
+        assertEquals(1.0f, params.normPanX, 0.01f)
+        assertEquals(-1.0f, params.normPanY, 0.01f)
     }
 
     @Test
