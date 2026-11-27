@@ -19,6 +19,7 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import com.gireesh.camviewsplit.model.DualVideoCompositionConfig
+import com.gireesh.camviewsplit.model.VideoSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -83,21 +84,30 @@ class DualVideoComposer(
                 val topMediaItem = MediaItem.fromUri(topVideoUri)
                 val topEffectsList = mutableListOf<Effect>()
 
-                // Apply Top matrix transformation for split layout & zoom/pan
                 val topState = config.topState
                 val splitRatio = config.splitRatio
 
                 val topMatrixTransform = MatrixTransformation { _ ->
                     val matrix = android.graphics.Matrix()
                     val zoom = topState.zoomScale.coerceAtLeast(0.1f)
+                    val panX = (topState.panOffset.x / 500f).coerceIn(-1.5f, 1.5f)
+                    val panY = (-topState.panOffset.y / 500f).coerceIn(-1.5f, 1.5f)
+
                     matrix.postScale(zoom, zoom * splitRatio)
-                    matrix.postTranslate(topState.panOffset.x, (1.0f - splitRatio) + topState.panOffset.y)
+                    matrix.postTranslate(panX, (1.0f - splitRatio) + panY)
                     matrix
                 }
                 topEffectsList.add(topMatrixTransform)
 
+                val isTopCamera = topState.source is VideoSource.LiveCameraFront || topState.source is VideoSource.LiveCameraRear
+                val removeTopAudio = if (isTopCamera) {
+                    topState.isMuted || !config.isMicAudioEnabled
+                } else {
+                    topState.isMuted
+                }
+
                 val topEditedItem = EditedMediaItem.Builder(topMediaItem)
-                    .setRemoveAudio(topState.isMuted || !config.isMicAudioEnabled)
+                    .setRemoveAudio(removeTopAudio)
                     .setEffects(Effects(emptyList(), topEffectsList))
                     .build()
 
@@ -115,14 +125,24 @@ class DualVideoComposer(
                 val bottomMatrixTransform = MatrixTransformation { _ ->
                     val matrix = android.graphics.Matrix()
                     val zoom = bottomState.zoomScale.coerceAtLeast(0.1f)
+                    val panX = (bottomState.panOffset.x / 500f).coerceIn(-1.5f, 1.5f)
+                    val panY = (-bottomState.panOffset.y / 500f).coerceIn(-1.5f, 1.5f)
+
                     matrix.postScale(zoom, zoom * (1.0f - splitRatio))
-                    matrix.postTranslate(bottomState.panOffset.x, -splitRatio + bottomState.panOffset.y)
+                    matrix.postTranslate(panX, -splitRatio + panY)
                     matrix
                 }
                 bottomEffectsList.add(bottomMatrixTransform)
 
+                val isBottomCamera = bottomState.source is VideoSource.LiveCameraFront || bottomState.source is VideoSource.LiveCameraRear
+                val removeBottomAudio = if (isBottomCamera) {
+                    bottomState.isMuted || !config.isMicAudioEnabled
+                } else {
+                    bottomState.isMuted
+                }
+
                 val bottomEditedItem = EditedMediaItem.Builder(bottomMediaItem)
-                    .setRemoveAudio(bottomState.isMuted)
+                    .setRemoveAudio(removeBottomAudio)
                     .setEffects(Effects(emptyList(), bottomEffectsList))
                     .build()
 

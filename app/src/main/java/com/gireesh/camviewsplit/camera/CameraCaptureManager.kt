@@ -97,27 +97,41 @@ class CameraCaptureManager(
         }, ContextCompat.getMainExecutor(context))
     }
 
+    fun isCameraPairSupported(topLens: Int, bottomLens: Int): Boolean {
+        val provider = cameraProvider ?: return false
+        return try {
+            val concurrentInfoList: List<List<CameraInfo>> = provider.availableConcurrentCameraInfos
+            for (cameraInfos in concurrentInfoList) {
+                if (cameraInfos.size < 2) continue
+                val facings = cameraInfos.map { it.lensFacing }
+                if (topLens == bottomLens) {
+                    if (facings.count { it == topLens } >= 2) return true
+                } else {
+                    if (facings.contains(topLens) && facings.contains(bottomLens)) return true
+                }
+            }
+            false
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to query availableConcurrentCameraInfos", e)
+            false
+        }
+    }
+
     private fun checkConcurrentCameraSupport() {
         val provider = cameraProvider ?: return
         try {
             val concurrentInfoList: List<List<CameraInfo>> = provider.availableConcurrentCameraInfos
-            var foundOpposingPair = false
+            var foundAnyPair = false
 
             for (cameraInfos in concurrentInfoList) {
-                var hasFront = false
-                var hasRear = false
-                for (info in cameraInfos) {
-                    if (info.lensFacing == CameraSelector.LENS_FACING_FRONT) hasFront = true
-                    if (info.lensFacing == CameraSelector.LENS_FACING_BACK) hasRear = true
-                }
-                if (hasFront && hasRear) {
-                    foundOpposingPair = true
+                if (cameraInfos.size >= 2) {
+                    foundAnyPair = true
                     break
                 }
             }
 
-            _isConcurrentCameraSupported.value = foundOpposingPair
-            Log.d(TAG, "Concurrent Front+Rear camera supported: $foundOpposingPair")
+            _isConcurrentCameraSupported.value = foundAnyPair
+            Log.d(TAG, "Concurrent camera supported: $foundAnyPair")
         } catch (e: Exception) {
             Log.w(TAG, "Failed to check availableConcurrentCameraInfos", e)
             _isConcurrentCameraSupported.value = false
@@ -166,13 +180,8 @@ class CameraCaptureManager(
                 val topLens = if (topSource is VideoSource.LiveCameraFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
                 val bottomLens = if (bottomSource is VideoSource.LiveCameraFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
 
-                if (topLens == bottomLens) {
-                    _errorMessage.value = "Concurrent dual camera requires one Front and one Rear camera. Please select a Gallery Video or switch one camera facing."
-                    return
-                }
-
-                if (!_isConcurrentCameraSupported.value) {
-                    _errorMessage.value = "Concurrent dual camera hardware is not supported on this device. Please select a Gallery Video for one section."
+                if (!isCameraPairSupported(topLens, bottomLens)) {
+                    _errorMessage.value = "The selected dual camera pair is not supported concurrently on this device hardware. Please select a Gallery Video for one section."
                     return
                 }
 

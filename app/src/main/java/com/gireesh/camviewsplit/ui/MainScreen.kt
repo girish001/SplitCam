@@ -539,6 +539,7 @@ fun MainScreen() {
                                                                 config = config,
                                                                 outputFile = cleanOutputFile,
                                                                 onSuccess = { exportedFile ->
+                                                                    cleanupTempCameraFiles(primaryCameraUri, secondaryCameraUri)
                                                                     scope.launch(Dispatchers.IO) {
                                                                         val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
                                                                         val newItem = mediaRepository.addCapturedMedia(
@@ -553,6 +554,7 @@ fun MainScreen() {
                                                                     }
                                                                 },
                                                                 onError = { err ->
+                                                                    cleanupTempCameraFiles(primaryCameraUri, secondaryCameraUri)
                                                                     scope.launch { snackbarHostState.showSnackbar("Export error: $err") }
                                                                 }
                                                             )
@@ -681,4 +683,17 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
     )
 
     return uri ?: Uri.fromFile(sourceFile)
+}
+
+private fun cleanupTempCameraFiles(primaryUri: Uri?, secondaryUri: Uri?) {
+    try {
+        if (primaryUri != null && primaryUri.scheme == "file") {
+            val f = File(primaryUri.path ?: "")
+            if (f.exists()) f.delete()
+        }
+        if (secondaryUri != null && secondaryUri.scheme == "file") {
+            val f = File(secondaryUri.path ?: "")
+            if (f.exists()) f.delete()
+        }
+    } catch (_: Exception) {}
 }
