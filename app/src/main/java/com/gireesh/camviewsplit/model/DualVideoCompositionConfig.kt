@@ -13,7 +13,9 @@ data class DualVideoCompositionConfig(
     val topState: VideoSectionState = VideoSectionState(source = VideoSource.LiveCameraFront),
     val bottomState: VideoSectionState = VideoSectionState(source = VideoSource.None),
     val isMicAudioEnabled: Boolean = true,
-    val showDivider: Boolean = true
+    val showDivider: Boolean = true,
+    val isConcurrentCameraSupported: Boolean = false,
+    val unsupportedCameraWarning: String? = null
 ) {
     fun swapTopAndBottom(): DualVideoCompositionConfig {
         return copy(

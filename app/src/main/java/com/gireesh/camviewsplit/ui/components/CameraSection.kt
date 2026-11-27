@@ -91,7 +91,7 @@ fun CameraSection(
     }
 
     LaunchedEffect(lifecycleOwner) {
-        cameraCaptureManager.startCamera(lifecycleOwner, previewView)
+        cameraCaptureManager.startSingleCamera(lifecycleOwner, previewView)
     }
 
     // Blinking effect for the red recording dot

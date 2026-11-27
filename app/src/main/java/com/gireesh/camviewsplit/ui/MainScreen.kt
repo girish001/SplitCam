@@ -445,52 +445,96 @@ fun MainScreen() {
                                 // Clean Dual-Video Record / Stop Button
                                 Surface(
                                     onClick = {
+                                        val isTopCamera = config.topState.source is VideoSource.LiveCameraFront || config.topState.source is VideoSource.LiveCameraRear
+                                        val isBottomCamera = config.bottomState.source is VideoSource.LiveCameraFront || config.bottomState.source is VideoSource.LiveCameraRear
+
                                         if (isCameraRecording) {
                                             // Stop CameraX Recording & Export Clean Dual-Video Composition
                                             cameraCaptureManager.stopVideoRecording()
                                         } else if (!isExportingComposition) {
-                                            // Start Recording
-                                            cameraCaptureManager.startVideoRecording(
-                                                onSuccess = { cameraUri, displayName ->
-                                                    scope.launch {
-                                                        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
-                                                        val cleanFileName = "SplitCam_CLEAN_$timestamp.mp4"
-                                                        val moviesDir = context.getExternalFilesDir("Movies") ?: context.filesDir
-                                                        val cleanOutputFile = File(moviesDir, cleanFileName)
+                                            if (!isTopCamera && !isBottomCamera) {
+                                                // Combination 4: Gallery Video + Gallery Video (Direct Export)
+                                                val topGalleryUri = (config.topState.source as? VideoSource.GalleryVideo)?.uri
+                                                val bottomGalleryUri = (config.bottomState.source as? VideoSource.GalleryVideo)?.uri
 
-                                                        val bottomUri = (config.bottomState.source as? VideoSource.GalleryVideo)?.uri
-                                                        val topUri = (config.topState.source as? VideoSource.GalleryVideo)?.uri ?: cameraUri
-
-                                                        // Export clean dual-video composition without ANY UI elements
-                                                        dualVideoComposer.exportComposition(
-                                                            topVideoUri = topUri,
-                                                            bottomVideoUri = bottomUri,
-                                                            config = config,
-                                                            outputFile = cleanOutputFile,
-                                                            onSuccess = { exportedFile ->
-                                                                scope.launch(Dispatchers.IO) {
-                                                                    val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
-                                                                    val newItem = mediaRepository.addCapturedMedia(
-                                                                        uri = savedUri,
-                                                                        isVideo = true,
-                                                                        displayName = cleanFileName
-                                                                    )
-                                                                    withContext(Dispatchers.Main) {
-                                                                        selectedVideo = newItem
-                                                                        snackbarHostState.showSnackbar("Clean dual video composition saved to gallery!")
-                                                                    }
-                                                                }
-                                                            },
-                                                            onError = { err ->
-                                                                scope.launch { snackbarHostState.showSnackbar("Export error: $err") }
-                                                            }
-                                                        )
-                                                    }
-                                                },
-                                                onError = { err ->
-                                                    scope.launch { snackbarHostState.showSnackbar("Recording error: $err") }
+                                                if (topGalleryUri == null && bottomGalleryUri == null) {
+                                                    scope.launch { snackbarHostState.showSnackbar("Please select at least one video or live camera source.") }
+                                                    return@Surface
                                                 }
-                                            )
+
+                                                scope.launch {
+                                                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
+                                                    val cleanFileName = "SplitCam_CLEAN_$timestamp.mp4"
+                                                    val moviesDir = context.getExternalFilesDir("Movies") ?: context.filesDir
+                                                    val cleanOutputFile = File(moviesDir, cleanFileName)
+
+                                                    dualVideoComposer.exportComposition(
+                                                        topVideoUri = topGalleryUri,
+                                                        bottomVideoUri = bottomGalleryUri,
+                                                        config = config,
+                                                        outputFile = cleanOutputFile,
+                                                        onSuccess = { exportedFile ->
+                                                            scope.launch(Dispatchers.IO) {
+                                                                val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
+                                                                val newItem = mediaRepository.addCapturedMedia(
+                                                                    uri = savedUri,
+                                                                    isVideo = true,
+                                                                    displayName = cleanFileName
+                                                                )
+                                                                withContext(Dispatchers.Main) {
+                                                                    selectedVideo = newItem
+                                                                    snackbarHostState.showSnackbar("Clean dual video composition saved to gallery!")
+                                                                }
+                                                            }
+                                                        },
+                                                        onError = { err ->
+                                                            scope.launch { snackbarHostState.showSnackbar("Export error: $err") }
+                                                        }
+                                                    )
+                                                }
+                                            } else {
+                                                // Combinations 1, 2, 3: Live Camera(s) + Optional Gallery Video
+                                                cameraCaptureManager.startVideoRecording(
+                                                    onSuccess = { primaryCameraUri, secondaryCameraUri ->
+                                                        scope.launch {
+                                                            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
+                                                            val cleanFileName = "SplitCam_CLEAN_$timestamp.mp4"
+                                                            val moviesDir = context.getExternalFilesDir("Movies") ?: context.filesDir
+                                                            val cleanOutputFile = File(moviesDir, cleanFileName)
+
+                                                            val topUri = if (isTopCamera) primaryCameraUri else (config.topState.source as? VideoSource.GalleryVideo)?.uri
+                                                            val bottomUri = if (isBottomCamera) (secondaryCameraUri ?: primaryCameraUri) else (config.bottomState.source as? VideoSource.GalleryVideo)?.uri
+
+                                                            dualVideoComposer.exportComposition(
+                                                                topVideoUri = topUri,
+                                                                bottomVideoUri = bottomUri,
+                                                                config = config,
+                                                                outputFile = cleanOutputFile,
+                                                                onSuccess = { exportedFile ->
+                                                                    scope.launch(Dispatchers.IO) {
+                                                                        val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
+                                                                        val newItem = mediaRepository.addCapturedMedia(
+                                                                            uri = savedUri,
+                                                                            isVideo = true,
+                                                                            displayName = cleanFileName
+                                                                        )
+                                                                        withContext(Dispatchers.Main) {
+                                                                            selectedVideo = newItem
+                                                                            snackbarHostState.showSnackbar("Clean dual video composition saved to gallery!")
+                                                                        }
+                                                                    }
+                                                                },
+                                                                onError = { err ->
+                                                                    scope.launch { snackbarHostState.showSnackbar("Export error: $err") }
+                                                                }
+                                                            )
+                                                        }
+                                                    },
+                                                    onError = { err ->
+                                                        scope.launch { snackbarHostState.showSnackbar("Recording error: $err") }
+                                                    }
+                                                )
+                                            }
                                         }
                                     },
                                     shape = CircleShape,

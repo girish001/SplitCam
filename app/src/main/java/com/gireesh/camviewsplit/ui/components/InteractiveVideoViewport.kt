@@ -100,7 +100,8 @@ fun InteractiveVideoViewport(
 
     LaunchedEffect(isCameraSource, lifecycleOwner) {
         if (isCameraSource) {
-            cameraCaptureManager.startCamera(lifecycleOwner, previewView)
+            val lensFacing = if (state.source is VideoSource.LiveCameraFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
+            cameraCaptureManager.startSingleCamera(lifecycleOwner, previewView, lensFacing)
         }
     }
 

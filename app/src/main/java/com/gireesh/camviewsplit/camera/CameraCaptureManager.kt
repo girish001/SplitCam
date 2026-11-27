@@ -9,10 +9,14 @@ import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
 import androidx.camera.core.Camera
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ConcurrentCamera
+import androidx.camera.core.ConcurrentCamera.SingleCameraConfig
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
@@ -34,6 +38,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -44,10 +49,16 @@ class CameraCaptureManager(
     private val TAG = "CameraCaptureManager"
 
     private var cameraProvider: ProcessCameraProvider? = null
-    private var camera: Camera? = null
-    private var preview: Preview? = null
+    private var primaryCamera: Camera? = null
+    private var secondaryCamera: Camera? = null
+
+    private var primaryPreview: Preview? = null
+    private var secondaryPreview: Preview? = null
     private var imageCapture: ImageCapture? = null
-    private var videoCapture: VideoCapture<Recorder>? = null
+
+    private var primaryVideoCapture: VideoCapture<Recorder>? = null
+    private var secondaryVideoCapture: VideoCapture<Recorder>? = null
+
     private var activeRecording: Recording? = null
     private var timerJob: Job? = null
 
@@ -63,6 +74,9 @@ class CameraCaptureManager(
     private val _isFlashOn = MutableStateFlow(false)
     val isFlashOn: StateFlow<Boolean> = _isFlashOn.asStateFlow()
 
+    private val _isConcurrentCameraSupported = MutableStateFlow(false)
+    val isConcurrentCameraSupported: StateFlow<Boolean> = _isConcurrentCameraSupported.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -70,15 +84,13 @@ class CameraCaptureManager(
         _errorMessage.value = null
     }
 
-    fun startCamera(
-        lifecycleOwner: LifecycleOwner,
-        previewView: PreviewView
-    ) {
+    fun initializeCameraProvider(onReady: () -> Unit) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context.applicationContext)
         cameraProviderFuture.addListener({
             try {
                 cameraProvider = cameraProviderFuture.get()
-                bindCameraUseCases(lifecycleOwner, previewView)
+                checkConcurrentCameraSupport()
+                onReady()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialize CameraProvider", e)
                 _errorMessage.value = "Failed to start camera: ${e.localizedMessage}"
@@ -86,7 +98,49 @@ class CameraCaptureManager(
         }, ContextCompat.getMainExecutor(context))
     }
 
-    private fun bindCameraUseCases(
+    private fun checkConcurrentCameraSupport() {
+        val provider = cameraProvider ?: return
+        try {
+            val concurrentInfoList: List<List<CameraInfo>> = provider.availableConcurrentCameraInfos
+            var foundOpposingPair = false
+
+            for (cameraInfos in concurrentInfoList) {
+                var hasFront = false
+                var hasRear = false
+                for (info in cameraInfos) {
+                    if (info.lensFacing == CameraSelector.LENS_FACING_FRONT) hasFront = true
+                    if (info.lensFacing == CameraSelector.LENS_FACING_BACK) hasRear = true
+                }
+                if (hasFront && hasRear) {
+                    foundOpposingPair = true
+                    break
+                }
+            }
+
+            _isConcurrentCameraSupported.value = foundOpposingPair
+            Log.d(TAG, "Concurrent Front+Rear camera supported: $foundOpposingPair")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to check availableConcurrentCameraInfos", e)
+            _isConcurrentCameraSupported.value = false
+        }
+    }
+
+    fun startSingleCamera(
+        lifecycleOwner: LifecycleOwner,
+        previewView: PreviewView,
+        targetLensFacing: Int = _lensFacing.value
+    ) {
+        _lensFacing.value = targetLensFacing
+        if (cameraProvider == null) {
+            initializeCameraProvider {
+                bindSingleCameraUseCases(lifecycleOwner, previewView)
+            }
+        } else {
+            bindSingleCameraUseCases(lifecycleOwner, previewView)
+        }
+    }
+
+    private fun bindSingleCameraUseCases(
         lifecycleOwner: LifecycleOwner,
         previewView: PreviewView
     ) {
@@ -99,17 +153,14 @@ class CameraCaptureManager(
                 .requireLensFacing(_lensFacing.value)
                 .build()
 
-            // Preview use case
-            preview = Preview.Builder().build().also {
+            primaryPreview = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
             }
 
-            // ImageCapture use case
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                 .build()
 
-            // VideoCapture use case
             val qualitySelector = QualitySelector.from(
                 Quality.HIGHEST,
                 FallbackStrategy.higherQualityOrLowerThan(Quality.SD)
@@ -117,23 +168,108 @@ class CameraCaptureManager(
             val recorder = Recorder.Builder()
                 .setQualitySelector(qualitySelector)
                 .build()
-            videoCapture = VideoCapture.withOutput(recorder)
+            primaryVideoCapture = VideoCapture.withOutput(recorder)
 
-            camera = provider.bindToLifecycle(
+            primaryCamera = provider.bindToLifecycle(
                 lifecycleOwner,
                 cameraSelector,
-                preview,
+                primaryPreview,
                 imageCapture,
-                videoCapture
+                primaryVideoCapture
             )
 
-            // Re-apply torch state if back camera
             if (_lensFacing.value == CameraSelector.LENS_FACING_BACK) {
-                camera?.cameraControl?.enableTorch(_isFlashOn.value)
+                primaryCamera?.cameraControl?.enableTorch(_isFlashOn.value)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Use case binding failed", e)
+            Log.e(TAG, "Single camera binding failed", e)
             _errorMessage.value = "Camera binding failed: ${e.localizedMessage}"
+        }
+    }
+
+    fun bindConcurrentDualCameras(
+        lifecycleOwner: LifecycleOwner,
+        topPreviewView: PreviewView,
+        bottomPreviewView: PreviewView
+    ): Boolean {
+        val provider = cameraProvider ?: run {
+            _errorMessage.value = "Camera provider not ready"
+            return false
+        }
+
+        if (!_isConcurrentCameraSupported.value) {
+            _errorMessage.value = "Concurrent dual camera hardware is not supported on this device. Please select a Gallery Video for one section."
+            return false
+        }
+
+        try {
+            provider.unbindAll()
+
+            // Front camera configuration
+            val frontSelector = CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
+                .build()
+
+            primaryPreview = Preview.Builder().build().also {
+                it.setSurfaceProvider(topPreviewView.surfaceProvider)
+            }
+
+            val qualitySelector = QualitySelector.from(
+                Quality.SD,
+                FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
+            )
+
+            val primaryRecorder = Recorder.Builder().setQualitySelector(qualitySelector).build()
+            primaryVideoCapture = VideoCapture.withOutput(primaryRecorder)
+
+            val primaryGroup = UseCaseGroup.Builder()
+                .addUseCase(primaryPreview!!)
+                .addUseCase(primaryVideoCapture!!)
+                .build()
+
+            val primaryConfig = SingleCameraConfig(
+                frontSelector,
+                primaryGroup,
+                lifecycleOwner
+            )
+
+            // Rear camera configuration
+            val rearSelector = CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                .build()
+
+            secondaryPreview = Preview.Builder().build().also {
+                it.setSurfaceProvider(bottomPreviewView.surfaceProvider)
+            }
+
+            val secondaryRecorder = Recorder.Builder().setQualitySelector(qualitySelector).build()
+            secondaryVideoCapture = VideoCapture.withOutput(secondaryRecorder)
+
+            val secondaryGroup = UseCaseGroup.Builder()
+                .addUseCase(secondaryPreview!!)
+                .addUseCase(secondaryVideoCapture!!)
+                .build()
+
+            val secondaryConfig = SingleCameraConfig(
+                rearSelector,
+                secondaryGroup,
+                lifecycleOwner
+            )
+
+            val concurrentCamera: ConcurrentCamera = provider.bindToLifecycle(
+                listOf(primaryConfig, secondaryConfig)
+            )
+
+            primaryCamera = concurrentCamera.cameras.getOrNull(0)
+            secondaryCamera = concurrentCamera.cameras.getOrNull(1)
+
+            Log.d(TAG, "Concurrent dual cameras bound successfully!")
+            return true
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Concurrent camera binding failed", e)
+            _errorMessage.value = "Concurrent dual camera failed: ${e.localizedMessage}. Falling back to single camera."
+            return false
         }
     }
 
@@ -151,7 +287,7 @@ class CameraCaptureManager(
             CameraSelector.LENS_FACING_BACK
         }
         _isFlashOn.value = false
-        bindCameraUseCases(lifecycleOwner, previewView)
+        bindSingleCameraUseCases(lifecycleOwner, previewView)
     }
 
     fun toggleFlash() {
@@ -161,7 +297,7 @@ class CameraCaptureManager(
         }
         val newState = !_isFlashOn.value
         _isFlashOn.value = newState
-        camera?.cameraControl?.enableTorch(newState)
+        primaryCamera?.cameraControl?.enableTorch(newState)
     }
 
     fun capturePhoto(
@@ -211,42 +347,62 @@ class CameraCaptureManager(
         )
     }
 
+    private var primaryRecording: Recording? = null
+    private var secondaryRecording: Recording? = null
+
     fun startVideoRecording(
-        onSuccess: (Uri, String) -> Unit,
+        onSuccess: (primaryUri: Uri, secondaryUri: Uri?) -> Unit,
         onError: (String) -> Unit
     ) {
-        val capture = videoCapture ?: run {
-            onError("Video recorder is not ready")
+        val primaryCapture = primaryVideoCapture ?: run {
+            onError("Primary video recorder is not ready")
             return
         }
 
-        if (activeRecording != null || _isRecording.value) {
+        if (primaryRecording != null || _isRecording.value) {
             return
         }
 
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
-        val displayName = "SplitCam_VID_$timestamp.mp4"
-        val tempFile = java.io.File(context.cacheDir, displayName)
+        val primaryFile = File(context.cacheDir, "SplitCam_PRI_$timestamp.mp4")
+        val secondaryFile = File(context.cacheDir, "SplitCam_SEC_$timestamp.mp4")
 
-        val fileOutputOptions = FileOutputOptions.Builder(tempFile).build()
-        var pendingRecording = capture.output.prepareRecording(context, fileOutputOptions)
+        var primaryResultUri: Uri? = null
+        var secondaryResultUri: Uri? = null
+        var primaryFinished = false
+        var secondaryFinished = secondaryVideoCapture == null
 
-        val hasAudioPermission = ContextCompat.checkSelfPermission(
+        fun checkBothFinished() {
+            if (primaryFinished && secondaryFinished) {
+                stopTimer()
+                _isRecording.value = false
+                primaryRecording?.close()
+                secondaryRecording?.close()
+                primaryRecording = null
+                secondaryRecording = null
+
+                if (primaryResultUri != null) {
+                    onSuccess(primaryResultUri!!, secondaryResultUri)
+                } else {
+                    onError("Failed to record camera video feed.")
+                }
+            }
+        }
+
+        val hasAudio = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED &&
                 context.packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE)
 
-        if (hasAudioPermission) {
-            try {
-                pendingRecording = pendingRecording.withAudioEnabled()
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not enable audio recording", e)
-            }
+        // Start Primary Camera Recording
+        var primaryPrep = primaryCapture.output.prepareRecording(context, FileOutputOptions.Builder(primaryFile).build())
+        if (hasAudio) {
+            try { primaryPrep = primaryPrep.withAudioEnabled() } catch (_: Exception) {}
         }
 
         try {
-            activeRecording = pendingRecording.start(ContextCompat.getMainExecutor(context)) { event ->
+            primaryRecording = primaryPrep.start(ContextCompat.getMainExecutor(context)) { event ->
                 when (event) {
                     is VideoRecordEvent.Start -> {
                         _isRecording.value = true
@@ -254,54 +410,53 @@ class CameraCaptureManager(
                         startTimer()
                     }
                     is VideoRecordEvent.Finalize -> {
-                        stopTimer()
-                        _isRecording.value = false
-                        activeRecording?.close()
-                        activeRecording = null
+                        if (!event.hasError() && primaryFile.exists() && primaryFile.length() > 0) {
+                            primaryResultUri = Uri.fromFile(primaryFile)
+                        } else if (primaryFile.exists() && primaryFile.length() > 0 && event.error != VideoRecordEvent.Finalize.ERROR_NO_VALID_DATA) {
+                            primaryResultUri = Uri.fromFile(primaryFile)
+                        }
+                        primaryFinished = true
+                        checkBothFinished()
+                    }
+                }
+            }
 
-                        if (!event.hasError() && tempFile.exists() && tempFile.length() > 0) {
-                            onSuccess(Uri.fromFile(tempFile), displayName)
-                        } else if (tempFile.exists() && tempFile.length() > 0 && event.error != VideoRecordEvent.Finalize.ERROR_NO_VALID_DATA) {
-                            onSuccess(Uri.fromFile(tempFile), displayName)
-                        } else {
-                            val friendlyMsg = when (event.error) {
-                                VideoRecordEvent.Finalize.ERROR_NO_VALID_DATA ->
-                                    "Recording was too short. Please record for at least 2 seconds."
-                                VideoRecordEvent.Finalize.ERROR_INSUFFICIENT_STORAGE ->
-                                    "Insufficient storage to save video."
-                                VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED ->
-                                    "Video file size limit reached."
-                                VideoRecordEvent.Finalize.ERROR_INVALID_OUTPUT_OPTIONS ->
-                                    "Storage error: Could not access video destination."
-                                VideoRecordEvent.Finalize.ERROR_RECORDER_ERROR ->
-                                    "Recorder error: Audio or video encoder failure."
-                                VideoRecordEvent.Finalize.ERROR_SOURCE_INACTIVE ->
-                                    "Camera source stopped."
-                                else ->
-                                    event.cause?.message ?: "Recording stopped with code ${event.error}"
+            // Start Secondary Camera Recording if present (Concurrent mode)
+            val secondaryCapture = secondaryVideoCapture
+            if (secondaryCapture != null) {
+                var secondaryPrep = secondaryCapture.output.prepareRecording(context, FileOutputOptions.Builder(secondaryFile).build())
+                secondaryRecording = secondaryPrep.start(ContextCompat.getMainExecutor(context)) { event ->
+                    when (event) {
+                        is VideoRecordEvent.Finalize -> {
+                            if (!event.hasError() && secondaryFile.exists() && secondaryFile.length() > 0) {
+                                secondaryResultUri = Uri.fromFile(secondaryFile)
                             }
-                            Log.e(TAG, "Video recording finalize error ${event.error}: $friendlyMsg", event.cause)
-                            onError(friendlyMsg)
+                            secondaryFinished = true
+                            checkBothFinished()
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start recording", e)
+            Log.e(TAG, "Failed to start camera recording", e)
             _isRecording.value = false
-            activeRecording = null
+            primaryRecording = null
+            secondaryRecording = null
             onError("Failed to start recording: ${e.localizedMessage}")
         }
     }
 
     fun stopVideoRecording() {
-        val recording = activeRecording ?: return
         try {
-            recording.stop()
+            primaryRecording?.stop()
         } catch (e: Exception) {
-            Log.e(TAG, "Exception while stopping recording", e)
+            Log.e(TAG, "Exception stopping primary recording", e)
         }
-        // Keep activeRecording until VideoRecordEvent.Finalize arrives to avoid premature garbage collection
+        try {
+            secondaryRecording?.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception stopping secondary recording", e)
+        }
     }
 
     private fun startTimer() {
