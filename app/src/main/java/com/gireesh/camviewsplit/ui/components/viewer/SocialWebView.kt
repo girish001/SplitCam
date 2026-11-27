@@ -85,7 +85,8 @@ fun SocialWebView(
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var lastRequestedSource by remember { mutableStateOf<BottomViewerSource?>(null) }
 
-    DisposableEffect(source) {
+    // Safe lifecycle disposal: Destroy WebView ONLY when exiting the Compose hierarchy
+    DisposableEffect(Unit) {
         onDispose {
             webViewInstance?.destroy()
             webViewInstance = null
@@ -265,11 +266,12 @@ fun SocialWebView(
                             }
 
                             loadUrl(initialUrl)
+                            lastRequestedSource = source
                             webViewInstance = this
                         }
                     },
                     update = { webView ->
-                        // Re-navigate ONLY when platform source changes, avoiding reload loops on web redirects
+                        // Load platform URL ONLY when platform source changes
                         if (lastRequestedSource != source && initialUrl.isNotEmpty()) {
                             lastRequestedSource = source
                             sslErrorOccurred = false

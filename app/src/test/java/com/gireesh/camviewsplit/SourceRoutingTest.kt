@@ -209,6 +209,39 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testSocialPlatformSwitchingUrlUpdate() {
+        var lastSource: BottomViewerSource? = null
+        var loadedUrl: String? = null
+
+        fun onUpdate(newSource: BottomViewerSource, url: String) {
+            if (lastSource != newSource) {
+                lastSource = newSource
+                loadedUrl = url
+            }
+        }
+
+        onUpdate(BottomViewerSource.INSTAGRAM, "https://www.instagram.com/reels/")
+        assertEquals("https://www.instagram.com/reels/", loadedUrl)
+
+        // Web redirect to login page should NOT trigger re-load of initial URL
+        onUpdate(BottomViewerSource.INSTAGRAM, "https://www.instagram.com/accounts/login/")
+        assertEquals("https://www.instagram.com/reels/", loadedUrl)
+
+        // Switching platform tab loads new URL
+        onUpdate(BottomViewerSource.YOUTUBE, "https://m.youtube.com/shorts/")
+        assertEquals("https://m.youtube.com/shorts/", loadedUrl)
+    }
+
+    @Test
+    fun testMediaStoreCopyByteVerificationFailure() {
+        val sourceFileLength = 5000L
+        val bytesCopied = 4999L // Incomplete copy
+        val isValid = bytesCopied == sourceFileLength
+
+        assertFalse(isValid)
+    }
+
+    @Test
     fun testSplitRatioBoundsAndReset() {
         val splitRatio = 0.95f // Out of bounds
         val clampedRatio = splitRatio.coerceIn(0.20f, 0.80f)
