@@ -124,8 +124,19 @@ fun MainScreen() {
     val cameraCaptureManager = remember { CameraCaptureManager(context, scope) }
     val dualVideoComposer = remember { DualVideoComposer(context, scope) }
 
-    // Dual Video Composition Configuration
-    var config by remember { mutableStateOf(DualVideoCompositionConfig()) }
+    // SharedPreferences for Split Ratio Persistence
+    val prefs = remember { context.getSharedPreferences("splitcam_prefs", Context.MODE_PRIVATE) }
+
+    // Dual Video Composition Configuration (Restores saved splitRatio)
+    var config by remember {
+        val savedRatio = prefs.getFloat("split_ratio", 0.5f).coerceIn(0.20f, 0.80f)
+        mutableStateOf(DualVideoCompositionConfig(splitRatio = savedRatio))
+    }
+
+    // Persist split ratio on change
+    LaunchedEffect(config.splitRatio) {
+        prefs.edit().putFloat("split_ratio", config.splitRatio).apply()
+    }
 
     // Bottom Section Viewer States (Instagram | Facebook | YouTube | Local Storage)
     var activeBottomSource by remember { mutableStateOf(BottomViewerSource.LOCAL_STORAGE) }
@@ -764,7 +775,8 @@ fun MainScreen() {
 }
 
 private fun saveVideoToPublicGallery(context: Context, sourceFile: File, displayName: String): Uri? {
-    if (!sourceFile.exists() || sourceFile.length() <= 0) {
+    val sourceLength = sourceFile.length()
+    if (!sourceFile.exists() || sourceLength <= 0L) {
         return null
     }
 
@@ -773,22 +785,43 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
         put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/SplitCam/")
+            put(MediaStore.Video.Media.IS_PENDING, 1)
         }
     }
 
     val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
-    if (uri != null) {
-        try {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
-                sourceFile.inputStream().use { input ->
-                    input.copyTo(output)
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            try { context.contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+        ?: return null
+
+    var bytesCopied = 0L
+    try {
+        val outputStream = context.contentResolver.openOutputStream(uri) ?: run {
+            context.contentResolver.delete(uri, null, null)
             return null
         }
+
+        outputStream.use { output ->
+            sourceFile.inputStream().use { input ->
+                bytesCopied = input.copyTo(output)
+            }
+        }
+
+        if (bytesCopied < sourceLength) {
+            context.contentResolver.delete(uri, null, null)
+            return null
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            contentValues.clear()
+            contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
+            context.contentResolver.update(uri, contentValues, null, null)
+        }
+
+    } catch (e: Exception) {
+        e.printStackTrace()
+        try {
+            context.contentResolver.delete(uri, null, null)
+        } catch (_: Exception) {}
+        return null
     }
 
     MediaScannerConnection.scanFile(
@@ -798,5 +831,5 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
         null
     )
 
-    return uri ?: Uri.fromFile(sourceFile)
+    return uri
 }

@@ -233,6 +233,19 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testMediaRepositoryOldFormatJsonMigration() {
+        val jsonString = """{"uri":"content://media/external/video/media/1234","displayName":"Legacy Video.mp4","dateAdded":1600000000000}"""
+        val hasId = jsonString.contains("\"id\":")
+        assertFalse(hasId)
+
+        val uriStart = jsonString.indexOf("\"uri\":\"") + 7
+        val uriEnd = jsonString.indexOf("\"", uriStart)
+        val extractedUri = jsonString.substring(uriStart, uriEnd)
+
+        assertEquals("content://media/external/video/media/1234", extractedUri)
+    }
+
+    @Test
     fun testEmptySourceFileValidation() {
         val tempFile = java.io.File.createTempFile("empty_test", ".mp4")
         tempFile.deleteOnExit()

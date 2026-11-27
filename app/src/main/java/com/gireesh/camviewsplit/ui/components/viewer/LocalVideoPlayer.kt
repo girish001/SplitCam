@@ -110,6 +110,9 @@ fun LocalVideoPlayer(
 
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var isPlaying by remember { mutableStateOf(true) }
+    var userPlaybackIntent by remember { mutableStateOf(true) }
+    val currentUserPlaybackIntent by rememberUpdatedState(userPlaybackIntent)
+
     var isMuted by remember { mutableStateOf(false) }
     var scaleMode by remember { mutableStateOf(ContentScaleMode.FIT) }
     var isAutoPlayNext by remember { mutableStateOf(true) }
@@ -122,7 +125,7 @@ fun LocalVideoPlayer(
     var playbackErrorMsg by remember { mutableStateOf<String?>(null) }
     var showPlaylistDrawer by remember { mutableStateOf(false) }
 
-    // App Lifecycle Management (Pause on Background, Resume on Foreground)
+    // App Lifecycle Management (Pause on Background, Resume on Foreground only if user intent is active)
     DisposableEffect(lifecycleOwner, exoPlayer) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -130,7 +133,7 @@ fun LocalVideoPlayer(
                     exoPlayer?.playWhenReady = false
                 }
                 Lifecycle.Event.ON_RESUME -> {
-                    if (isPlaying) {
+                    if (currentUserPlaybackIntent) {
                         exoPlayer?.playWhenReady = true
                     }
                 }
@@ -405,7 +408,13 @@ fun LocalVideoPlayer(
                                 IconButton(
                                     onClick = {
                                         exoPlayer?.let { p ->
-                                            if (p.isPlaying) p.pause() else p.play()
+                                            if (p.isPlaying) {
+                                                userPlaybackIntent = false
+                                                p.pause()
+                                            } else {
+                                                userPlaybackIntent = true
+                                                p.play()
+                                            }
                                         }
                                     },
                                     modifier = Modifier.size(32.dp)

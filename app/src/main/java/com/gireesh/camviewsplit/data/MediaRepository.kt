@@ -50,6 +50,10 @@ class MediaRepository(private val context: Context) {
 
     suspend fun saveLocalPlaylist(playlist: List<LocalVideoItem>, currentIndex: Int) = withContext(Dispatchers.IO) {
         try {
+            if (playlist.isEmpty()) {
+                clearLocalPlaylist()
+                return@withContext
+            }
             val json = JSONObject()
             json.put("currentIndex", currentIndex)
             val array = JSONArray()
@@ -211,6 +215,26 @@ class MediaRepository(private val context: Context) {
         _mediaItems.value = current
     }
 
+    fun parseCapturedMediaItem(obj: JSONObject): MediaItem? {
+        return try {
+            val uriStr = obj.optString("uri", "")
+            if (uriStr.isEmpty()) return null
+            val rawId = obj.optString("id", "")
+            val id = if (rawId.isNotEmpty()) rawId else uriStr
+            MediaItem(
+                id = id,
+                uri = Uri.parse(uriStr),
+                isVideo = obj.optBoolean("isVideo", true),
+                displayName = obj.optString("displayName", "SplitCam Video"),
+                dateAdded = obj.optLong("dateAdded", System.currentTimeMillis()),
+                durationMs = obj.optLong("durationMs", 0L),
+                isImported = false
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun loadCapturedFromIndex(): List<MediaItem> {
         if (!capturedIndexFile.exists()) return emptyList()
         val list = mutableListOf<MediaItem>()
@@ -219,18 +243,10 @@ class MediaRepository(private val context: Context) {
             val array = JSONArray(jsonText)
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
-                val uriStr = obj.getString("uri")
-                list.add(
-                    MediaItem(
-                        id = obj.getString("id"),
-                        uri = Uri.parse(uriStr),
-                        isVideo = obj.getBoolean("isVideo"),
-                        displayName = obj.getString("displayName"),
-                        dateAdded = obj.getLong("dateAdded"),
-                        durationMs = obj.optLong("durationMs", 0L),
-                        isImported = false
-                    )
-                )
+                val item = parseCapturedMediaItem(obj)
+                if (item != null) {
+                    list.add(item)
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
