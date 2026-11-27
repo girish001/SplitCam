@@ -97,24 +97,35 @@ class CameraCaptureManager(
         }, ContextCompat.getMainExecutor(context))
     }
 
-    fun isCameraPairSupported(topLens: Int, bottomLens: Int): Boolean {
-        val provider = cameraProvider ?: return false
+    fun getConcurrentPairSelectors(topLens: Int, bottomLens: Int): Pair<CameraSelector, CameraSelector>? {
+        val provider = cameraProvider ?: return null
         return try {
-            val concurrentInfoList: List<List<CameraInfo>> = provider.availableConcurrentCameraInfos
+            val concurrentInfoList = provider.availableConcurrentCameraInfos
             for (cameraInfos in concurrentInfoList) {
                 if (cameraInfos.size < 2) continue
-                val facings = cameraInfos.map { it.lensFacing }
-                if (topLens == bottomLens) {
-                    if (facings.count { it == topLens } >= 2) return true
-                } else {
-                    if (facings.contains(topLens) && facings.contains(bottomLens)) return true
+
+                val info0 = cameraInfos[0]
+                val info1 = cameraInfos[1]
+
+                if (info0.lensFacing == topLens && info1.lensFacing == bottomLens) {
+                    val topSel = CameraSelector.Builder().addCameraFilter { list -> list.filter { it == info0 } }.build()
+                    val bottomSel = CameraSelector.Builder().addCameraFilter { list -> list.filter { it == info1 } }.build()
+                    return Pair(topSel, bottomSel)
+                } else if (info0.lensFacing == bottomLens && info1.lensFacing == topLens) {
+                    val topSel = CameraSelector.Builder().addCameraFilter { list -> list.filter { it == info1 } }.build()
+                    val bottomSel = CameraSelector.Builder().addCameraFilter { list -> list.filter { it == info0 } }.build()
+                    return Pair(topSel, bottomSel)
                 }
             }
-            false
+            null
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to query availableConcurrentCameraInfos", e)
-            false
+            Log.w(TAG, "Error getting concurrent pair selectors", e)
+            null
         }
+    }
+
+    fun isCameraPairSupported(topLens: Int, bottomLens: Int): Boolean {
+        return getConcurrentPairSelectors(topLens, bottomLens) != null
     }
 
     private fun checkConcurrentCameraSupport() {
@@ -180,7 +191,8 @@ class CameraCaptureManager(
                 val topLens = if (topSource is VideoSource.LiveCameraFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
                 val bottomLens = if (bottomSource is VideoSource.LiveCameraFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
 
-                if (!isCameraPairSupported(topLens, bottomLens)) {
+                val pairSelectors = getConcurrentPairSelectors(topLens, bottomLens)
+                if (pairSelectors == null) {
                     _errorMessage.value = "The selected dual camera pair is not supported concurrently on this device hardware. Please select a Gallery Video for one section."
                     return
                 }
@@ -190,7 +202,7 @@ class CameraCaptureManager(
                 val qualitySelector = QualitySelector.from(Quality.SD, FallbackStrategy.lowerQualityOrHigherThan(Quality.SD))
 
                 // Top Camera Config
-                val topSelector = CameraSelector.Builder().requireLensFacing(topLens).build()
+                val topSelector = pairSelectors.first
                 primaryPreview = Preview.Builder().build().also { it.setSurfaceProvider(topPreviewView.surfaceProvider) }
                 val topRecorder = Recorder.Builder().setQualitySelector(qualitySelector).build()
                 primaryVideoCapture = VideoCapture.withOutput(topRecorder)
@@ -198,7 +210,7 @@ class CameraCaptureManager(
                 val topConfig = SingleCameraConfig(topSelector, topGroup, lifecycleOwner)
 
                 // Bottom Camera Config
-                val bottomSelector = CameraSelector.Builder().requireLensFacing(bottomLens).build()
+                val bottomSelector = pairSelectors.second
                 secondaryPreview = Preview.Builder().build().also { it.setSurfaceProvider(bottomPreviewView.surfaceProvider) }
                 val bottomRecorder = Recorder.Builder().setQualitySelector(qualitySelector).build()
                 secondaryVideoCapture = VideoCapture.withOutput(bottomRecorder)

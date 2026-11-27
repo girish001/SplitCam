@@ -63,6 +63,8 @@ class DualVideoComposer(
         bottomVideoUri: Uri?,
         config: DualVideoCompositionConfig,
         outputFile: File,
+        outputWidth: Int = 1080,
+        outputHeight: Int = 1920,
         onSuccess: (File) -> Unit,
         onError: (String) -> Unit
     ) {
@@ -150,7 +152,7 @@ class DualVideoComposer(
             }
 
             val compositionEffects = listOf<Effect>(
-                Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT)
+                Presentation.createForWidthAndHeight(outputWidth, outputHeight, Presentation.LAYOUT_SCALE_TO_FIT)
             )
 
             val composition = Composition.Builder(sequences)
