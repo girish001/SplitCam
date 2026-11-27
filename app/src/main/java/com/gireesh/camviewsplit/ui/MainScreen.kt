@@ -82,6 +82,8 @@ import com.gireesh.camviewsplit.model.MediaItem
 import com.gireesh.camviewsplit.model.VideoSectionState
 import com.gireesh.camviewsplit.model.VideoSource
 import com.gireesh.camviewsplit.ui.components.AudioControlPanel
+import androidx.compose.material.icons.filled.Settings
+import com.gireesh.camviewsplit.ui.components.ExportSettingsBottomSheet
 import com.gireesh.camviewsplit.ui.components.GallerySection
 import com.gireesh.camviewsplit.ui.components.InteractiveVideoViewport
 import com.gireesh.camviewsplit.ui.components.LayoutPresetBar
@@ -118,6 +120,9 @@ fun MainScreen() {
 
     // Dual Video Composition Configuration
     var config by remember { mutableStateOf(DualVideoCompositionConfig()) }
+
+    // Export Settings Bottom Sheet visibility state
+    var showExportSettingsSheet by remember { mutableStateOf(false) }
 
     // Session Camera Recordings State
     var sessionCameraRecordings by remember { mutableStateOf<RecordingSession?>(null) }
@@ -389,6 +394,9 @@ fun MainScreen() {
                                             }
                                             config = config.copy(topState = config.topState.copy(source = newSource))
                                         },
+                                        onRemoveSourceClick = {
+                                            config = config.copy(topState = config.topState.copy(source = VideoSource.None))
+                                        },
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .weight(config.splitRatio)
@@ -420,6 +428,9 @@ fun MainScreen() {
                                                 VideoSource.LiveCameraFront
                                             }
                                             config = config.copy(bottomState = config.bottomState.copy(source = newSource))
+                                        },
+                                        onRemoveSourceClick = {
+                                            config = config.copy(bottomState = config.bottomState.copy(source = VideoSource.None))
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -601,23 +612,19 @@ fun MainScreen() {
                                     }
                                 }
 
-                                // Quick Lens Flip Button
+                                // Video Size / Export Settings Button
                                 IconButton(
-                                    onClick = {
-                                        val isFront = config.topState.source is VideoSource.LiveCameraFront
-                                        val newSource = if (isFront) VideoSource.LiveCameraRear else VideoSource.LiveCameraFront
-                                        config = config.copy(topState = config.topState.copy(source = newSource))
-                                    },
+                                    onClick = { showExportSettingsSheet = true },
                                     enabled = !isCameraRecording && !isExportingComposition,
                                     modifier = Modifier
                                         .size(52.dp)
                                         .background(DarkSurfaceElevated, CircleShape)
-                                        .border(1.dp, TealAccent.copy(alpha = 0.6f), CircleShape)
+                                        .border(1.dp, CyanPrimary.copy(alpha = 0.8f), CircleShape)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Cameraswitch,
-                                        contentDescription = "Flip Camera Lens",
-                                        tint = TealAccent,
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = "Video Size & Export Settings",
+                                        tint = CyanPrimary,
                                         modifier = Modifier.size(24.dp)
                                     )
                                 }
@@ -629,56 +636,68 @@ fun MainScreen() {
                             CompositionSourceResolver.resolve(config, sessionCameraRecordings)
                         }
 
-                        // Social Media Export & Sharing Panel
-                        if (!isCameraRecording && !isExportingComposition) {
-                            SocialMediaPanel(
-                                exportedVideoUri = selectedVideo?.uri,
-                                topMediaUri = liveResolvedURIs.topUri,
-                                bottomMediaUri = liveResolvedURIs.bottomUri,
-                                config = config,
-                                onExportWithDimensions = { customWidth, customHeight ->
-                                    val resolvedPair = CompositionSourceResolver.resolve(config, sessionCameraRecordings)
+                // Social Media Export & Sharing Panel
+                if (!isCameraRecording && !isExportingComposition && selectedVideo == null && selectedPhoto == null) {
+                    SocialMediaPanel(
+                        exportedVideoUri = selectedVideo?.uri,
+                        topMediaUri = liveResolvedURIs.topUri,
+                        bottomMediaUri = liveResolvedURIs.bottomUri,
+                        config = config,
+                        onExportWithDimensions = { _, _ -> }
+                    )
+                }
 
-                                    if (!resolvedPair.isValid) {
-                                        scope.launch { snackbarHostState.showSnackbar(resolvedPair.errorMessage ?: "Video sources not ready for export.") }
-                                        return@SocialMediaPanel
-                                    }
+                // Export Settings Bottom Sheet Dialog
+                if (showExportSettingsSheet) {
+                    ExportSettingsBottomSheet(
+                        topMediaUri = liveResolvedURIs.topUri,
+                        bottomMediaUri = liveResolvedURIs.bottomUri,
+                        config = config,
+                        onConfigChange = { newConfig -> config = newConfig },
+                        onExportWithDimensions = { customWidth, customHeight ->
+                            val resolvedPair = CompositionSourceResolver.resolve(config, sessionCameraRecordings)
 
-                                    scope.launch {
-                                        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
-                                        val cleanFileName = "SplitCam_SOCIAL_${customWidth}x${customHeight}_$timestamp.mp4"
-                                        val moviesDir = context.getExternalFilesDir("Movies") ?: context.filesDir
-                                        val cleanOutputFile = File(moviesDir, cleanFileName)
+                            if (!resolvedPair.isValid) {
+                                scope.launch { snackbarHostState.showSnackbar(resolvedPair.errorMessage ?: "Video sources not ready for export.") }
+                                return@ExportSettingsBottomSheet
+                            }
 
-                                        dualVideoComposer.exportComposition(
-                                            topVideoUri = resolvedPair.topUri,
-                                            bottomVideoUri = resolvedPair.bottomUri,
-                                            config = config,
-                                            outputFile = cleanOutputFile,
-                                            outputWidth = customWidth,
-                                            outputHeight = customHeight,
-                                            onSuccess = { exportedFile ->
-                                                scope.launch(Dispatchers.IO) {
-                                                    val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
-                                                    val newItem = mediaRepository.addCapturedMedia(
-                                                        uri = savedUri,
-                                                        isVideo = true,
-                                                        displayName = cleanFileName
-                                                    )
-                                                    withContext(Dispatchers.Main) {
-                                                        selectedVideo = newItem
-                                                        snackbarHostState.showSnackbar("Exported $customWidth × $customHeight video for Social Media!")
-                                                    }
-                                                }
-                                            },
-                                            onError = { err ->
-                                                scope.launch { snackbarHostState.showSnackbar("Export error: $err") }
+                            scope.launch {
+                                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
+                                val cleanFileName = "SplitCam_${customWidth}x${customHeight}_$timestamp.mp4"
+                                val moviesDir = context.getExternalFilesDir("Movies") ?: context.filesDir
+                                val cleanOutputFile = File(moviesDir, cleanFileName)
+
+                                dualVideoComposer.exportComposition(
+                                    topVideoUri = resolvedPair.topUri,
+                                    bottomVideoUri = resolvedPair.bottomUri,
+                                    config = config,
+                                    outputFile = cleanOutputFile,
+                                    outputWidth = customWidth,
+                                    outputHeight = customHeight,
+                                    onSuccess = { exportedFile ->
+                                        scope.launch(Dispatchers.IO) {
+                                            val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
+                                            val newItem = mediaRepository.addCapturedMedia(
+                                                uri = savedUri,
+                                                isVideo = true,
+                                                displayName = cleanFileName
+                                            )
+                                            withContext(Dispatchers.Main) {
+                                                selectedVideo = newItem
+                                                snackbarHostState.showSnackbar("Exported $customWidth × $customHeight video saved to Movies/SplitCam/")
                                             }
-                                        )
+                                        }
+                                    },
+                                    onError = { err ->
+                                        scope.launch { snackbarHostState.showSnackbar("Export error: $err") }
                                     }
-                                }
-                            )
-                        }
+                                )
+                            }
+                        },
+                        onDismiss = { showExportSettingsSheet = false }
+                    )
+                }
                     }
                 }
 

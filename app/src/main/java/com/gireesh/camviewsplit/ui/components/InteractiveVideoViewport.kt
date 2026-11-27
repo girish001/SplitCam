@@ -1,7 +1,5 @@
 package com.gireesh.camviewsplit.ui.components
 
-import android.net.Uri
-import androidx.camera.core.CameraSelector
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -23,11 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.FlipToBack
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -43,31 +40,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import com.gireesh.camviewsplit.camera.CameraCaptureManager
 import com.gireesh.camviewsplit.model.ContentScaleMode
 import com.gireesh.camviewsplit.model.VideoSectionState
 import com.gireesh.camviewsplit.model.VideoSource
 import com.gireesh.camviewsplit.ui.theme.CyanPrimary
 import com.gireesh.camviewsplit.ui.theme.DarkBorder
 import com.gireesh.camviewsplit.ui.theme.DarkSurface
-import com.gireesh.camviewsplit.ui.theme.DarkSurfaceElevated
 import com.gireesh.camviewsplit.ui.theme.TealAccent
 
 @Composable
@@ -79,6 +70,7 @@ fun InteractiveVideoViewport(
     onStateChange: (VideoSectionState) -> Unit,
     onSelectGalleryMediaClick: () -> Unit,
     onSwitchCameraClick: () -> Unit,
+    onRemoveSourceClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -175,7 +167,7 @@ fun InteractiveVideoViewport(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Tap Gallery or Camera to select $title source",
+                            text = "Tap Gallery or Camera below to select $title source",
                             color = Color.Gray,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium
@@ -185,7 +177,7 @@ fun InteractiveVideoViewport(
             }
         }
 
-        // Overlay Toolbar Controls (Visible when not recording or on hover)
+        // Overlay Toolbar Controls (Visible when not recording)
         AnimatedVisibility(
             visible = !isRecording,
             enter = fadeIn(),
@@ -200,7 +192,7 @@ fun InteractiveVideoViewport(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Section Title Chip
+                // Section Title & Source Type Chip
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -208,15 +200,21 @@ fun InteractiveVideoViewport(
                         .border(1.dp, DarkBorder, RoundedCornerShape(12.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
+                    val label = when (state.source) {
+                        is VideoSource.LiveCameraFront -> "$title (Front Cam)"
+                        is VideoSource.LiveCameraRear -> "$title (Rear Cam)"
+                        is VideoSource.GalleryVideo -> "$title (Gallery)"
+                        else -> title
+                    }
                     Text(
-                        text = title,
+                        text = label,
                         color = CyanPrimary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                // Controls: Source Selector, Fit/Fill, Mute, Reset
+                // Toolbar Controls
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -231,14 +229,14 @@ fun InteractiveVideoViewport(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Cameraswitch,
-                                contentDescription = "Switch Camera",
+                                contentDescription = "Switch Camera Lens",
                                 tint = TealAccent,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
                     }
 
-                    // Import Video from Gallery Button
+                    // Gallery Select or Replace Video Button
                     IconButton(
                         onClick = onSelectGalleryMediaClick,
                         modifier = Modifier
@@ -246,11 +244,28 @@ fun InteractiveVideoViewport(
                             .background(DarkSurface.copy(alpha = 0.85f), CircleShape)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.FolderOpen,
-                            contentDescription = "Import Video",
+                            imageVector = if (isGallerySource) Icons.Default.SwapHoriz else Icons.Default.FolderOpen,
+                            contentDescription = if (isGallerySource) "Replace Gallery Video" else "Import Gallery Video",
                             tint = CyanPrimary,
                             modifier = Modifier.size(16.dp)
                         )
+                    }
+
+                    // Remove / Clear Gallery Video Button
+                    if (isGallerySource) {
+                        IconButton(
+                            onClick = onRemoveSourceClick,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .background(DarkSurface.copy(alpha = 0.85f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Remove Source",
+                                tint = Color.Red,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
 
                     // Fit vs Fill Scale Toggle
