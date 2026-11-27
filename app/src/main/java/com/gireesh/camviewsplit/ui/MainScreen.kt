@@ -75,6 +75,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import android.content.Intent
 import com.gireesh.camviewsplit.camera.CameraCaptureManager
 import com.gireesh.camviewsplit.composition.DualVideoComposer
 import com.gireesh.camviewsplit.data.MediaRepository
@@ -157,11 +158,21 @@ fun MainScreen() {
     // Gallery media selection state (for picking video into top or bottom section)
     var targetSectionForPicker by remember { mutableStateOf<String?>(null) } // "TOP" or "BOTTOM"
 
+    // Last Exported Composition URI for Social Sharing
+    var lastExportedVideoUri by remember { mutableStateOf<Uri?>(null) }
+
     // System Video Picker Launcher (supports Gallery, Downloads, Files, and PC-transferred videos)
     val mediaPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri ->
             if (uri != null && targetSectionForPicker != null) {
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) {}
+
                 scope.launch {
                     mediaRepository.importMediaUris(listOf(uri))
                     val importedItem = mediaRepository.mediaItems.value.firstOrNull()
@@ -526,14 +537,21 @@ fun MainScreen() {
                                                         onSuccess = { exportedFile ->
                                                             scope.launch(Dispatchers.IO) {
                                                                 val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
-                                                                val newItem = mediaRepository.addCapturedMedia(
-                                                                    uri = savedUri,
-                                                                    isVideo = true,
-                                                                    displayName = cleanFileName
-                                                                )
-                                                                withContext(Dispatchers.Main) {
-                                                                    selectedVideo = newItem
-                                                                    snackbarHostState.showSnackbar("Clean dual video composition saved to gallery!")
+                                                                if (savedUri != null) {
+                                                                    val newItem = mediaRepository.addCapturedMedia(
+                                                                        uri = savedUri,
+                                                                        isVideo = true,
+                                                                        displayName = cleanFileName
+                                                                    )
+                                                                    withContext(Dispatchers.Main) {
+                                                                        lastExportedVideoUri = savedUri
+                                                                        selectedVideo = newItem
+                                                                        snackbarHostState.showSnackbar("Clean dual video saved to Movies/SplitCam/$cleanFileName")
+                                                                    }
+                                                                } else {
+                                                                    withContext(Dispatchers.Main) {
+                                                                        snackbarHostState.showSnackbar("Failed to save video to gallery.")
+                                                                    }
                                                                 }
                                                             }
                                                         },
@@ -568,14 +586,17 @@ fun MainScreen() {
                                                                 onSuccess = { exportedFile ->
                                                                     scope.launch(Dispatchers.IO) {
                                                                         val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
-                                                                        val newItem = mediaRepository.addCapturedMedia(
-                                                                            uri = savedUri,
-                                                                            isVideo = true,
-                                                                            displayName = cleanFileName
-                                                                        )
-                                                                        withContext(Dispatchers.Main) {
-                                                                            selectedVideo = newItem
-                                                                            snackbarHostState.showSnackbar("Clean dual video composition saved to gallery!")
+                                                                        if (savedUri != null) {
+                                                                            val newItem = mediaRepository.addCapturedMedia(
+                                                                                uri = savedUri,
+                                                                                isVideo = true,
+                                                                                displayName = cleanFileName
+                                                                            )
+                                                                            withContext(Dispatchers.Main) {
+                                                                                lastExportedVideoUri = savedUri
+                                                                                selectedVideo = newItem
+                                                                                snackbarHostState.showSnackbar("Clean dual video saved to Movies/SplitCam/$cleanFileName")
+                                                                            }
                                                                         }
                                                                     }
                                                                 },
@@ -644,7 +665,7 @@ fun MainScreen() {
                 // Social Media Export & Sharing Panel
                 if (!isCameraRecording && !isExportingComposition && selectedVideo == null && selectedPhoto == null) {
                     SocialMediaPanel(
-                        exportedVideoUri = selectedVideo?.uri,
+                        exportedVideoUri = lastExportedVideoUri ?: selectedVideo?.uri,
                         topMediaUri = liveResolvedURIs.topUri,
                         bottomMediaUri = liveResolvedURIs.bottomUri,
                         config = config,
@@ -683,14 +704,17 @@ fun MainScreen() {
                                     onSuccess = { exportedFile ->
                                         scope.launch(Dispatchers.IO) {
                                             val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
-                                            val newItem = mediaRepository.addCapturedMedia(
-                                                uri = savedUri,
-                                                isVideo = true,
-                                                displayName = cleanFileName
-                                            )
-                                            withContext(Dispatchers.Main) {
-                                                selectedVideo = newItem
-                                                snackbarHostState.showSnackbar("Exported $customWidth × $customHeight video saved to Movies/SplitCam/")
+                                            if (savedUri != null) {
+                                                val newItem = mediaRepository.addCapturedMedia(
+                                                    uri = savedUri,
+                                                    isVideo = true,
+                                                    displayName = cleanFileName
+                                                )
+                                                withContext(Dispatchers.Main) {
+                                                    lastExportedVideoUri = savedUri
+                                                    selectedVideo = newItem
+                                                    snackbarHostState.showSnackbar("Exported $customWidth × $customHeight video saved to Movies/SplitCam/")
+                                                }
                                             }
                                         }
                                     },
@@ -742,7 +766,11 @@ fun MainScreen() {
     }
 }
 
-private fun saveVideoToPublicGallery(context: Context, sourceFile: File, displayName: String): Uri {
+private fun saveVideoToPublicGallery(context: Context, sourceFile: File, displayName: String): Uri? {
+    if (!sourceFile.exists() || sourceFile.length() <= 0) {
+        return null
+    }
+
     val contentValues = ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
         put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
@@ -761,6 +789,8 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
             }
         } catch (e: Exception) {
             e.printStackTrace()
+            try { context.contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+            return null
         }
     }
 
@@ -772,17 +802,4 @@ private fun saveVideoToPublicGallery(context: Context, sourceFile: File, display
     )
 
     return uri ?: Uri.fromFile(sourceFile)
-}
-
-private fun cleanupTempCameraFiles(primaryUri: Uri?, secondaryUri: Uri?) {
-    try {
-        if (primaryUri != null && primaryUri.scheme == "file") {
-            val f = File(primaryUri.path ?: "")
-            if (f.exists()) f.delete()
-        }
-        if (secondaryUri != null && secondaryUri.scheme == "file") {
-            val f = File(secondaryUri.path ?: "")
-            if (f.exists()) f.delete()
-        }
-    } catch (_: Exception) {}
 }

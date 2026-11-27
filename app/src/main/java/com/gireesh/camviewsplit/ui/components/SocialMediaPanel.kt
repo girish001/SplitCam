@@ -1,12 +1,9 @@
 package com.gireesh.camviewsplit.ui.components
 
-import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,22 +17,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Login
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,27 +44,16 @@ import com.gireesh.camviewsplit.ui.theme.TextSecondary
 import com.gireesh.camviewsplit.util.SocialPlatform
 import com.gireesh.camviewsplit.util.SocialShareHelper
 
-data class SocialAccountState(
-    val platform: SocialPlatform,
-    val isConnected: Boolean = false,
-    val accountName: String? = null
-)
-
 @Composable
 fun SocialMediaPanel(
     exportedVideoUri: Uri?,
-    topMediaUri: Uri?,
-    bottomMediaUri: Uri?,
-    config: DualVideoCompositionConfig,
-    onExportWithDimensions: (width: Int, height: Int) -> Unit,
+    topMediaUri: Uri? = null,
+    bottomMediaUri: Uri? = null,
+    config: DualVideoCompositionConfig? = null,
+    onExportWithDimensions: ((width: Int, height: Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-
-    // Social Account Auth Connection States
-    var instagramAccount by remember { mutableStateOf(SocialAccountState(SocialPlatform.INSTAGRAM, isConnected = false)) }
-    var facebookAccount by remember { mutableStateOf(SocialAccountState(SocialPlatform.FACEBOOK, isConnected = false)) }
-    var youtubeAccount by remember { mutableStateOf(SocialAccountState(SocialPlatform.YOUTUBE, isConnected = false)) }
 
     Column(
         modifier = modifier
@@ -98,7 +76,7 @@ fun SocialMediaPanel(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Social Media Accounts & Sharing",
+                    text = "Social Media Export & Sharing",
                     color = TextPrimary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
@@ -108,24 +86,14 @@ fun SocialMediaPanel(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Platform Account Connection Cards
+        // Platform Cards with Direct Share Flow
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Instagram Card
-            SocialPlatformAccountCard(
-                accountState = instagramAccount,
+            SocialPlatformShareCard(
+                platform = SocialPlatform.INSTAGRAM,
                 exportedVideoUri = exportedVideoUri,
-                onConnectClick = {
-                    performOAuthConnect(context, SocialPlatform.INSTAGRAM) { name ->
-                        instagramAccount = instagramAccount.copy(isConnected = true, accountName = name)
-                    }
-                },
-                onDisconnectClick = {
-                    instagramAccount = instagramAccount.copy(isConnected = false, accountName = null)
-                    Toast.makeText(context, "Instagram disconnected", Toast.LENGTH_SHORT).show()
-                },
                 onShareClick = {
                     if (exportedVideoUri != null) {
                         SocialShareHelper.shareVideoToPlatform(context, exportedVideoUri, SocialPlatform.INSTAGRAM)
@@ -135,19 +103,9 @@ fun SocialMediaPanel(
                 }
             )
 
-            // Facebook Card
-            SocialPlatformAccountCard(
-                accountState = facebookAccount,
+            SocialPlatformShareCard(
+                platform = SocialPlatform.FACEBOOK,
                 exportedVideoUri = exportedVideoUri,
-                onConnectClick = {
-                    performOAuthConnect(context, SocialPlatform.FACEBOOK) { name ->
-                        facebookAccount = facebookAccount.copy(isConnected = true, accountName = name)
-                    }
-                },
-                onDisconnectClick = {
-                    facebookAccount = facebookAccount.copy(isConnected = false, accountName = null)
-                    Toast.makeText(context, "Facebook disconnected", Toast.LENGTH_SHORT).show()
-                },
                 onShareClick = {
                     if (exportedVideoUri != null) {
                         SocialShareHelper.shareVideoToPlatform(context, exportedVideoUri, SocialPlatform.FACEBOOK)
@@ -157,19 +115,9 @@ fun SocialMediaPanel(
                 }
             )
 
-            // YouTube Card
-            SocialPlatformAccountCard(
-                accountState = youtubeAccount,
+            SocialPlatformShareCard(
+                platform = SocialPlatform.YOUTUBE,
                 exportedVideoUri = exportedVideoUri,
-                onConnectClick = {
-                    performOAuthConnect(context, SocialPlatform.YOUTUBE) { name ->
-                        youtubeAccount = youtubeAccount.copy(isConnected = true, accountName = name)
-                    }
-                },
-                onDisconnectClick = {
-                    youtubeAccount = youtubeAccount.copy(isConnected = false, accountName = null)
-                    Toast.makeText(context, "YouTube disconnected", Toast.LENGTH_SHORT).show()
-                },
                 onShareClick = {
                     if (exportedVideoUri != null) {
                         SocialShareHelper.shareVideoToPlatform(context, exportedVideoUri, SocialPlatform.YOUTUBE)
@@ -182,31 +130,34 @@ fun SocialMediaPanel(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Generic Share Sheet Fallback Button
-        if (exportedVideoUri != null) {
-            Button(
-                onClick = {
+        // Generic Share Sheet Button
+        Button(
+            onClick = {
+                if (exportedVideoUri != null) {
                     SocialShareHelper.shareVideoGeneric(context, exportedVideoUri)
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = TealAccent,
-                    contentColor = Color.Black
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Share Video via Android System Share Sheet",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
+                } else {
+                    Toast.makeText(context, "Please record or export a video first.", Toast.LENGTH_SHORT).show()
+                }
+            },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = TealAccent,
+                contentColor = Color.Black
+            ),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Share via System Share Sheet",
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp
+            )
         }
 
-        // OAuth Security Notice Note
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Notice Note
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -222,7 +173,7 @@ fun SocialMediaPanel(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "Secure OAuth 2.0 Auth: SplitCam never asks for or stores passwords. Direct video publishing targets platform apps via secure share intents.",
+                text = "Secure Sharing: SplitCam uses Android's native share flow to target official platform apps. Password entry is never required.",
                 color = TextSecondary,
                 fontSize = 10.sp,
                 lineHeight = 12.sp
@@ -232,11 +183,9 @@ fun SocialMediaPanel(
 }
 
 @Composable
-private fun SocialPlatformAccountCard(
-    accountState: SocialAccountState,
+private fun SocialPlatformShareCard(
+    platform: SocialPlatform,
     exportedVideoUri: Uri?,
-    onConnectClick: () -> Unit,
-    onDisconnectClick: () -> Unit,
     onShareClick: () -> Unit
 ) {
     Row(
@@ -244,7 +193,7 @@ private fun SocialPlatformAccountCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(DarkSurfaceElevated)
-            .border(1.dp, if (accountState.isConnected) CyanPrimary.copy(alpha = 0.6f) else DarkBorder, RoundedCornerShape(12.dp))
+            .border(1.dp, DarkBorder, RoundedCornerShape(12.dp))
             .padding(10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -253,14 +202,14 @@ private fun SocialPlatformAccountCard(
             Box(
                 modifier = Modifier
                     .size(36.dp)
-                    .background(if (accountState.isConnected) CyanPrimary.copy(alpha = 0.2f) else DarkSurface, CircleShape)
-                    .border(1.dp, if (accountState.isConnected) CyanPrimary else DarkBorder, CircleShape),
+                    .background(DarkSurface, CircleShape)
+                    .border(1.dp, CyanPrimary, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = if (accountState.isConnected) Icons.Default.CheckCircle else Icons.Default.Info,
+                    imageVector = Icons.Default.Info,
                     contentDescription = null,
-                    tint = if (accountState.isConnected) CyanPrimary else Color.Gray,
+                    tint = CyanPrimary,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -269,80 +218,32 @@ private fun SocialPlatformAccountCard(
 
             Column {
                 Text(
-                    text = accountState.platform.displayName,
+                    text = platform.displayName,
                     color = TextPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = if (accountState.isConnected) "Connected: ${accountState.accountName ?: "User"}" else "Not Connected",
-                    color = if (accountState.isConnected) TealAccent else Color.Gray,
+                    text = if (exportedVideoUri != null) "Ready for Sharing" else "Record a video to share",
+                    color = if (exportedVideoUri != null) TealAccent else Color.Gray,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
         }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        Button(
+            onClick = onShareClick,
+            enabled = exportedVideoUri != null,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = CyanPrimary,
+                contentColor = Color.Black
+            ),
+            shape = RoundedCornerShape(10.dp)
         ) {
-            if (accountState.isConnected) {
-                // Share Button
-                Button(
-                    onClick = onShareClick,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = CyanPrimary,
-                        contentColor = Color.Black
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Share", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-
-                // Disconnect Button
-                OutlinedButton(
-                    onClick = onDisconnectClick,
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(imageVector = Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Red)
-                }
-            } else {
-                // Connect Button
-                Button(
-                    onClick = onConnectClick,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = DarkSurface,
-                        contentColor = CyanPrimary
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.border(1.dp, CyanPrimary, RoundedCornerShape(10.dp))
-                ) {
-                    Icon(imageVector = Icons.Default.Login, contentDescription = null, modifier = Modifier.size(14.dp), tint = CyanPrimary)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Connect", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-            }
+            Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(text = "Share to ${platform.displayName}", fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
-    }
-}
-
-private fun performOAuthConnect(context: Context, platform: SocialPlatform, onConnected: (String) -> Unit) {
-    val authUrl = when (platform) {
-        SocialPlatform.INSTAGRAM -> "https://api.instagram.com/oauth/authorize"
-        SocialPlatform.FACEBOOK -> "https://www.facebook.com/v18.0/dialog/oauth"
-        SocialPlatform.YOUTUBE -> "https://accounts.google.com/o/oauth2/auth"
-    }
-
-    try {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
-        context.startActivity(intent)
-        onConnected("${platform.displayName}_Creator")
-        Toast.makeText(context, "Opened secure ${platform.displayName} OAuth sign-in", Toast.LENGTH_SHORT).show()
-    } catch (_: Exception) {
-        onConnected("${platform.displayName}_User")
-        Toast.makeText(context, "Connected to ${platform.displayName} session", Toast.LENGTH_SHORT).show()
     }
 }
