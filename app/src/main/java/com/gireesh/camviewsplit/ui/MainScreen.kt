@@ -90,7 +90,11 @@ import com.gireesh.camviewsplit.ui.components.GallerySection
 import com.gireesh.camviewsplit.ui.components.InteractiveVideoViewport
 import com.gireesh.camviewsplit.ui.components.LayoutPresetBar
 import com.gireesh.camviewsplit.ui.components.PhotoViewer
+import com.gireesh.camviewsplit.model.BottomViewerSource
+import com.gireesh.camviewsplit.model.LocalVideoItem
 import com.gireesh.camviewsplit.model.RecordingSession
+import com.gireesh.camviewsplit.ui.components.viewer.AdjustableSplitLayout
+import com.gireesh.camviewsplit.ui.components.viewer.BottomVideoViewer
 import com.gireesh.camviewsplit.ui.components.SocialMediaPanel
 import com.gireesh.camviewsplit.ui.components.VideoPlayerView
 import com.gireesh.camviewsplit.util.CompositionSourceResolver
@@ -122,6 +126,12 @@ fun MainScreen() {
 
     // Dual Video Composition Configuration
     var config by remember { mutableStateOf(DualVideoCompositionConfig()) }
+
+    // Bottom Section Viewer States (Instagram | Facebook | YouTube | Local Storage)
+    var activeBottomSource by remember { mutableStateOf(BottomViewerSource.LOCAL_STORAGE) }
+    var localVideoPlaylist by remember { mutableStateOf<List<LocalVideoItem>>(emptyList()) }
+    var currentLocalVideoIndex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var isFullScreenBottomViewer by remember { mutableStateOf(false) }
 
     // Export Settings Bottom Sheet visibility state
     var showExportSettingsSheet by remember { mutableStateOf(false) }
@@ -390,69 +400,51 @@ fun MainScreen() {
                                 )
                             }
                             else -> {
-                                Column(modifier = Modifier.fillMaxSize()) {
-                                    // TOP VIDEO SECTION
-                                    InteractiveVideoViewport(
-                                        title = "TOP",
-                                        state = config.topState,
-                                        previewView = topPreviewView,
-                                        isRecording = isCameraRecording || isExportingComposition,
-                                        onStateChange = { newState -> config = config.copy(topState = newState) },
-                                        onSelectGalleryMediaClick = {
-                                            targetSectionForPicker = "TOP"
-                                            mediaPickerLauncher.launch("video/*")
-                                        },
-                                        onSwitchCameraClick = {
-                                            val newSource = if (config.topState.source is VideoSource.LiveCameraFront) {
-                                                VideoSource.LiveCameraRear
-                                            } else {
-                                                VideoSource.LiveCameraFront
-                                            }
-                                            config = config.copy(topState = config.topState.copy(source = newSource))
-                                        },
-                                        onRemoveSourceClick = {
-                                            config = config.copy(topState = config.topState.copy(source = VideoSource.None))
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .weight(config.splitRatio)
-                                    )
-
-                                    // OPTIONAL VISUAL DIVIDER LINE
-                                    if (config.showDivider) {
-                                        HorizontalDivider(
-                                            thickness = 3.dp,
-                                            color = if (isCameraRecording) RecRed else CyanPrimary
+                                AdjustableSplitLayout(
+                                    splitRatio = config.splitRatio,
+                                    onSplitRatioChange = { newRatio -> config = config.copy(splitRatio = newRatio) },
+                                    isRecording = isCameraRecording || isExportingComposition,
+                                    isFullScreenBottom = isFullScreenBottomViewer,
+                                    topContent = {
+                                        InteractiveVideoViewport(
+                                            title = "TOP",
+                                            state = config.topState,
+                                            previewView = topPreviewView,
+                                            isRecording = isCameraRecording || isExportingComposition,
+                                            onStateChange = { newState -> config = config.copy(topState = newState) },
+                                            onSelectGalleryMediaClick = {
+                                                targetSectionForPicker = "TOP"
+                                                mediaPickerLauncher.launch("video/*")
+                                            },
+                                            onSwitchCameraClick = {
+                                                val newSource = if (config.topState.source is VideoSource.LiveCameraFront) {
+                                                    VideoSource.LiveCameraRear
+                                                } else {
+                                                    VideoSource.LiveCameraFront
+                                                }
+                                                config = config.copy(topState = config.topState.copy(source = newSource))
+                                            },
+                                            onRemoveSourceClick = {
+                                                config = config.copy(topState = config.topState.copy(source = VideoSource.None))
+                                            },
+                                            modifier = Modifier.fillMaxSize()
                                         )
-                                    }
-
-                                    // BOTTOM VIDEO SECTION
-                                    InteractiveVideoViewport(
-                                        title = "BOTTOM",
-                                        state = config.bottomState,
-                                        previewView = bottomPreviewView,
-                                        isRecording = isCameraRecording || isExportingComposition,
-                                        onStateChange = { newState -> config = config.copy(bottomState = newState) },
-                                        onSelectGalleryMediaClick = {
-                                            targetSectionForPicker = "BOTTOM"
-                                            mediaPickerLauncher.launch("video/*")
-                                        },
-                                        onSwitchCameraClick = {
-                                            val newSource = if (config.bottomState.source is VideoSource.LiveCameraFront) {
-                                                VideoSource.LiveCameraRear
-                                            } else {
-                                                VideoSource.LiveCameraFront
-                                            }
-                                            config = config.copy(bottomState = config.bottomState.copy(source = newSource))
-                                        },
-                                        onRemoveSourceClick = {
-                                            config = config.copy(bottomState = config.bottomState.copy(source = VideoSource.None))
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .weight(1f - config.splitRatio)
-                                    )
-                                }
+                                    },
+                                    bottomContent = {
+                                        BottomVideoViewer(
+                                            activeSource = activeBottomSource,
+                                            onSourceChange = { newSource -> activeBottomSource = newSource },
+                                            localVideoList = localVideoPlaylist,
+                                            currentLocalIndex = currentLocalVideoIndex,
+                                            isFullScreen = isFullScreenBottomViewer,
+                                            onLocalVideoListChange = { newList -> localVideoPlaylist = newList },
+                                            onLocalIndexChange = { newIdx -> currentLocalVideoIndex = newIdx },
+                                            onToggleFullScreenClick = { isFullScreenBottomViewer = !isFullScreenBottomViewer },
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             }
                         }
                     }
