@@ -797,14 +797,21 @@ fun MainScreen() {
 private suspend fun scanMediaFileAsync(context: Context, filePath: String, mimeType: String): Uri? {
     return withTimeoutOrNull(5000L) {
         suspendCancellableCoroutine { continuation ->
+            val isCompleted = java.util.concurrent.atomic.AtomicBoolean(false)
             MediaScannerConnection.scanFile(
                 context,
                 arrayOf(filePath),
                 arrayOf(mimeType)
             ) { _, uri ->
-                if (continuation.isActive) {
-                    continuation.resume(uri)
+                if (isCompleted.compareAndSet(false, true)) {
+                    if (continuation.isActive) {
+                        continuation.resume(uri)
+                    }
                 }
+            }
+
+            continuation.invokeOnCancellation {
+                isCompleted.set(true)
             }
         }
     }

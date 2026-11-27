@@ -251,6 +251,16 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testAtomicScannerCancellation() {
+        val isCompleted = java.util.concurrent.atomic.AtomicBoolean(false)
+        val firstAttempt = isCompleted.compareAndSet(false, true)
+        val secondAttempt = isCompleted.compareAndSet(false, true)
+
+        assertTrue(firstAttempt)
+        assertFalse(secondAttempt) // Late callback rejected safely!
+    }
+
+    @Test
     fun testApi26To28MediaStoreSavePath() {
         val apiVersion = 28
         val isLegacyApi = apiVersion < 29

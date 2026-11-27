@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Info
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -53,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import com.gireesh.camviewsplit.model.BottomViewerSource
 import com.gireesh.camviewsplit.ui.theme.CyanPrimary
 import com.gireesh.camviewsplit.ui.theme.DarkBorder
@@ -85,9 +88,14 @@ fun SocialWebView(
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var lastRequestedSource by remember { mutableStateOf<BottomViewerSource?>(null) }
 
-    // Safe lifecycle disposal: Destroy WebView ONLY when exiting the Compose hierarchy
+    // Visible Popup WebView Dialog State
+    var popupWebViewState by remember { mutableStateOf<WebView?>(null) }
+
+    // Safe lifecycle disposal: Destroy WebViews ONLY when exiting the Compose hierarchy
     DisposableEffect(Unit) {
         onDispose {
+            popupWebViewState?.destroy()
+            popupWebViewState = null
             webViewInstance?.destroy()
             webViewInstance = null
         }
@@ -233,29 +241,35 @@ fun SocialWebView(
                                     if (resultMsg == null) return false
                                     val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
 
-                                    val tempWebView = WebView(ctx).apply {
-                                        settings.javaScriptEnabled = true
-                                        webViewClient = object : WebViewClient() {
-                                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                                val targetUrl = request?.url?.toString()
-                                                if (!targetUrl.isNullOrEmpty()) {
-                                                    try {
-                                                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)))
-                                                    } catch (_: Exception) {}
-                                                }
-                                                try { destroy() } catch (_: Exception) {}
-                                                return true
-                                            }
+                                    val popupWebView = WebView(ctx).apply {
+                                        settings.apply {
+                                            javaScriptEnabled = true
+                                            domStorageEnabled = true
+                                            setSupportMultipleWindows(true)
+                                            userAgentString = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+                                        }
 
+                                        val popupCookieMgr = CookieManager.getInstance()
+                                        popupCookieMgr.setAcceptCookie(true)
+                                        popupCookieMgr.setAcceptThirdPartyCookies(this, true)
+
+                                        webChromeClient = object : WebChromeClient() {
+                                            override fun onCloseWindow(window: WebView?) {
+                                                popupWebViewState?.destroy()
+                                                popupWebViewState = null
+                                            }
+                                        }
+
+                                        webViewClient = object : WebViewClient() {
                                             override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
                                                 handler?.cancel()
-                                                try { destroy() } catch (_: Exception) {}
                                             }
                                         }
                                     }
 
-                                    transport.webView = tempWebView
+                                    transport.webView = popupWebView
                                     resultMsg.sendToTarget()
+                                    popupWebViewState = popupWebView
                                     return true
                                 }
                             }
@@ -309,6 +323,62 @@ fun SocialWebView(
                     ) {
                         CircularProgressIndicator(color = CyanPrimary, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
                     }
+                }
+            }
+        }
+    }
+
+    // Visible Popup Container Dialog for interactive login/popup windows
+    if (popupWebViewState != null) {
+        Dialog(
+            onDismissRequest = {
+                popupWebViewState?.destroy()
+                popupWebViewState = null
+            }
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = DarkSurfaceElevated,
+                border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(480.dp)
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(DarkSurface)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Login / Platform Window",
+                            color = TextPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(
+                            onClick = {
+                                popupWebViewState?.destroy()
+                                popupWebViewState = null
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Popup",
+                                tint = Color.Gray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    AndroidView(
+                        factory = { popupWebViewState!! },
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
         }
