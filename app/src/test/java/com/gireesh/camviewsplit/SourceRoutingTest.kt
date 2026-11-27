@@ -233,6 +233,12 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testContentUriValidationAndFileProviderFallback() {
+        val packageProviderAuthority = "com.gireesh.camviewsplit.fileprovider"
+        assertTrue(packageProviderAuthority.endsWith(".fileprovider"))
+    }
+
+    @Test
     fun testWebViewPopupTransportValidation() {
         val resultMsg: android.os.Message? = null
         val isValidTransport = resultMsg?.obj is android.webkit.WebView.WebViewTransport

@@ -76,6 +76,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import android.content.Intent
 import com.gireesh.camviewsplit.camera.CameraCaptureManager
 import com.gireesh.camviewsplit.composition.DualVideoComposer
@@ -912,9 +913,17 @@ private suspend fun saveVideoToPublicGallery(context: Context, sourceFile: File,
                 }
             }
 
-            // Return file URI or content URI safely if file exists and length matches
+            // Safe content:// URI fallback via FileProvider if file exists and byte length matches exactly
             if (publicFile.exists() && publicFile.length() == sourceLength) {
-                return@withContext resultUri ?: Uri.fromFile(publicFile)
+                return@withContext try {
+                    FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        publicFile
+                    )
+                } catch (_: Exception) {
+                    null
+                }
             }
 
             // Failure path: Clean up incomplete file if size mismatch
