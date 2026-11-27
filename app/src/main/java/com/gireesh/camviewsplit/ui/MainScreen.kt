@@ -621,44 +621,53 @@ fun MainScreen() {
                             SocialMediaPanel(
                                 exportedVideoUri = selectedVideo?.uri,
                                 onExportWithDimensions = { customWidth, customHeight ->
-                                    val topGalleryUri = (config.topState.source as? VideoSource.GalleryVideo)?.uri
+                                    val isTopCamera = config.topState.source is VideoSource.LiveCameraFront || config.topState.source is VideoSource.LiveCameraRear
+                                    val isBottomCamera = config.bottomState.source is VideoSource.LiveCameraFront || config.bottomState.source is VideoSource.LiveCameraRear
+
+                                    val topGalleryUri = (config.topState.source as? VideoSource.GalleryVideo)?.uri ?: selectedVideo?.uri
                                     val bottomGalleryUri = (config.bottomState.source as? VideoSource.GalleryVideo)?.uri
 
-                                    if (topGalleryUri != null || bottomGalleryUri != null) {
-                                        scope.launch {
-                                            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
-                                            val cleanFileName = "SplitCam_SOCIAL_${customWidth}x${customHeight}_$timestamp.mp4"
-                                            val moviesDir = context.getExternalFilesDir("Movies") ?: context.filesDir
-                                            val cleanOutputFile = File(moviesDir, cleanFileName)
+                                    if ((isTopCamera || isBottomCamera) && selectedVideo == null && topGalleryUri == null && bottomGalleryUri == null) {
+                                        scope.launch { snackbarHostState.showSnackbar("Please record live camera video first or select gallery media.") }
+                                        return@SocialMediaPanel
+                                    }
 
-                                            dualVideoComposer.exportComposition(
-                                                topVideoUri = topGalleryUri,
-                                                bottomVideoUri = bottomGalleryUri,
-                                                config = config,
-                                                outputFile = cleanOutputFile,
-                                                outputWidth = customWidth,
-                                                outputHeight = customHeight,
-                                                onSuccess = { exportedFile ->
-                                                    scope.launch(Dispatchers.IO) {
-                                                        val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
-                                                        val newItem = mediaRepository.addCapturedMedia(
-                                                            uri = savedUri,
-                                                            isVideo = true,
-                                                            displayName = cleanFileName
-                                                        )
-                                                        withContext(Dispatchers.Main) {
-                                                            selectedVideo = newItem
-                                                            snackbarHostState.showSnackbar("Exported $customWidth x $customHeight video for Social Media!")
-                                                        }
+                                    if (topGalleryUri == null && bottomGalleryUri == null) {
+                                        scope.launch { snackbarHostState.showSnackbar("Please select video sources or record a video first.") }
+                                        return@SocialMediaPanel
+                                    }
+
+                                    scope.launch {
+                                        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
+                                        val cleanFileName = "SplitCam_SOCIAL_${customWidth}x${customHeight}_$timestamp.mp4"
+                                        val moviesDir = context.getExternalFilesDir("Movies") ?: context.filesDir
+                                        val cleanOutputFile = File(moviesDir, cleanFileName)
+
+                                        dualVideoComposer.exportComposition(
+                                            topVideoUri = topGalleryUri,
+                                            bottomVideoUri = bottomGalleryUri,
+                                            config = config,
+                                            outputFile = cleanOutputFile,
+                                            outputWidth = customWidth,
+                                            outputHeight = customHeight,
+                                            onSuccess = { exportedFile ->
+                                                scope.launch(Dispatchers.IO) {
+                                                    val savedUri = saveVideoToPublicGallery(context, exportedFile, cleanFileName)
+                                                    val newItem = mediaRepository.addCapturedMedia(
+                                                        uri = savedUri,
+                                                        isVideo = true,
+                                                        displayName = cleanFileName
+                                                    )
+                                                    withContext(Dispatchers.Main) {
+                                                        selectedVideo = newItem
+                                                        snackbarHostState.showSnackbar("Exported $customWidth × $customHeight video for Social Media!")
                                                     }
-                                                },
-                                                onError = { err ->
-                                                    scope.launch { snackbarHostState.showSnackbar("Export error: $err") }
                                                 }
-                                            )
-                                        }
-                                    } else {
-                                        scope.launch { snackbarHostState.showSnackbar("Please record a video or select gallery media first.") }
+                                            },
+                                            onError = { err ->
+                                                scope.launch { snackbarHostState.showSnackbar("Export error: $err") }
+                                            }
+                                        )
                                     }
                                 }
                             )

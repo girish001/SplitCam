@@ -14,3 +14,7 @@
 .cxx
 local.properties
 /.artifacts
+*.jks
+*.keystore
+*.p12
+*.pepk

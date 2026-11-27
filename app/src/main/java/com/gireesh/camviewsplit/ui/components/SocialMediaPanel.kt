@@ -1,9 +1,8 @@
 package com.gireesh.camviewsplit.ui.components
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -31,7 +29,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,6 +51,7 @@ import com.gireesh.camviewsplit.ui.theme.DarkSurfaceElevated
 import com.gireesh.camviewsplit.ui.theme.TealAccent
 import com.gireesh.camviewsplit.ui.theme.TextPrimary
 import com.gireesh.camviewsplit.ui.theme.TextSecondary
+import com.gireesh.camviewsplit.util.ResolutionValidator
 import com.gireesh.camviewsplit.util.SocialPlatform
 import com.gireesh.camviewsplit.util.SocialShareHelper
 
@@ -76,21 +74,21 @@ fun SocialMediaPanel(
     var selectedPlatforms by remember { mutableStateOf(setOf(SocialPlatform.INSTAGRAM)) }
 
     val instagramPresets = listOf(
-        SocialPreset("Reels (9:16)", 1080, 1920, "9:16"),
-        SocialPreset("Square (1:1)", 1080, 1080, "1:1"),
-        SocialPreset("Landscape (16:9)", 1920, 1080, "16:9")
+        SocialPreset("Reels (9:16)", 1080, 1920, "9:16 (Portrait)"),
+        SocialPreset("Square (1:1)", 1080, 1080, "1:1 (Square)"),
+        SocialPreset("Landscape (16:9)", 1920, 1080, "16:9 (Landscape)")
     )
 
     val facebookPresets = listOf(
-        SocialPreset("Reels (9:16)", 1080, 1920, "9:16"),
-        SocialPreset("Square (1:1)", 1080, 1080, "1:1"),
-        SocialPreset("Landscape (16:9)", 1920, 1080, "16:9")
+        SocialPreset("Reels (9:16)", 1080, 1920, "9:16 (Portrait)"),
+        SocialPreset("Square (1:1)", 1080, 1080, "1:1 (Square)"),
+        SocialPreset("Landscape (16:9)", 1920, 1080, "16:9 (Landscape)")
     )
 
     val youtubePresets = listOf(
-        SocialPreset("Shorts (9:16)", 1080, 1920, "9:16"),
-        SocialPreset("Landscape (16:9)", 1920, 1080, "16:9"),
-        SocialPreset("Square (1:1)", 1080, 1080, "1:1")
+        SocialPreset("Shorts (9:16)", 1080, 1920, "9:16 (Portrait)"),
+        SocialPreset("Landscape (16:9)", 1920, 1080, "16:9 (Landscape)"),
+        SocialPreset("Square (1:1)", 1080, 1080, "1:1 (Square)")
     )
 
     var activePreset by remember { mutableStateOf(instagramPresets[0]) }
@@ -99,8 +97,12 @@ fun SocialMediaPanel(
     var customWidthStr by remember { mutableStateOf("1080") }
     var customHeightStr by remember { mutableStateOf("1920") }
 
-    val currentWidth = if (isCustomResolution) customWidthStr.toIntOrNull() ?: 1080 else activePreset.width
-    val currentHeight = if (isCustomResolution) customHeightStr.toIntOrNull() ?: 1920 else activePreset.height
+    val rawWidth = if (isCustomResolution) customWidthStr.toIntOrNull() ?: 1080 else activePreset.width
+    val rawHeight = if (isCustomResolution) customHeightStr.toIntOrNull() ?: 1920 else activePreset.height
+
+    val validationResult = remember(rawWidth, rawHeight) {
+        ResolutionValidator.validateAndNormalize(rawWidth, rawHeight)
+    }
 
     Column(
         modifier = modifier
@@ -131,16 +133,16 @@ fun SocialMediaPanel(
             }
 
             Text(
-                text = "${currentWidth}x${currentHeight}",
-                color = TealAccent,
-                fontSize = 12.sp,
+                text = "${validationResult.width}×${validationResult.height} [${validationResult.aspectRatioLabel}]",
+                color = if (validationResult.isValid) TealAccent else Color.Red,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
             )
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        // Platform Selection Row
+        // Target Platforms Row
         Text(text = "Target Platforms:", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
         Spacer(modifier = Modifier.height(4.dp))
 
@@ -184,7 +186,7 @@ fun SocialMediaPanel(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Presets Chips
+        // Resolution Presets Chips
         Text(text = "Resolution Presets:", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
         Spacer(modifier = Modifier.height(4.dp))
 
@@ -221,7 +223,7 @@ fun SocialMediaPanel(
                 }
             }
 
-            // Custom Preset Option Chip
+            // Custom Option Chip
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
@@ -231,7 +233,7 @@ fun SocialMediaPanel(
                     .padding(horizontal = 10.dp, vertical = 5.dp)
             ) {
                 Text(
-                    text = "Custom",
+                    text = "Custom Resolution",
                     color = if (isCustomResolution) Color.Black else Color.White,
                     fontSize = 11.sp,
                     fontWeight = if (isCustomResolution) FontWeight.Bold else FontWeight.Medium
@@ -241,79 +243,122 @@ fun SocialMediaPanel(
 
         // Custom Resolution Inputs
         AnimatedVisibility(visible = isCustomResolution) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = customWidthStr,
-                    onValueChange = { customWidthStr = it.filter { char -> char.isDigit() } },
-                    label = { Text("Width (px)", fontSize = 10.sp) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = CyanPrimary,
-                        unfocusedBorderColor = DarkBorder,
-                        focusedLabelColor = CyanPrimary
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = customWidthStr,
+                        onValueChange = { customWidthStr = it.filter { c -> c.isDigit() } },
+                        label = { Text("Width (px)", fontSize = 10.sp) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CyanPrimary,
+                            unfocusedBorderColor = DarkBorder,
+                            focusedLabelColor = CyanPrimary
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
 
-                Text(text = "×", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(text = "×", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
 
-                OutlinedTextField(
-                    value = customHeightStr,
-                    onValueChange = { customHeightStr = it.filter { char -> char.isDigit() } },
-                    label = { Text("Height (px)", fontSize = 10.sp) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = CyanPrimary,
-                        unfocusedBorderColor = DarkBorder,
-                        focusedLabelColor = CyanPrimary
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
+                    OutlinedTextField(
+                        value = customHeightStr,
+                        onValueChange = { customHeightStr = it.filter { c -> c.isDigit() } },
+                        label = { Text("Height (px)", fontSize = 10.sp) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CyanPrimary,
+                            unfocusedBorderColor = DarkBorder,
+                            focusedLabelColor = CyanPrimary
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                if (!validationResult.isValid && validationResult.errorMessage != null) {
+                    Text(
+                        text = validationResult.errorMessage,
+                        color = Color.Red,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Action Buttons: Render with Custom Dimensions or Share
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        // Export & Platform Share Buttons Row
+        Button(
+            onClick = {
+                if (!validationResult.isValid) {
+                    Toast.makeText(context, validationResult.errorMessage ?: "Invalid resolution dimensions", Toast.LENGTH_LONG).show()
+                    return@Button
+                }
+                onExportWithDimensions(validationResult.width, validationResult.height)
+            },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = CyanPrimary,
+                contentColor = Color.Black
+            ),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Button(
-                onClick = { onExportWithDimensions(currentWidth, currentHeight) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CyanPrimary,
-                    contentColor = Color.Black
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(imageVector = Icons.Default.VideoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(text = "Export ${currentWidth}x${currentHeight}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            }
+            Icon(imageVector = Icons.Default.VideoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Export ${validationResult.width}×${validationResult.height} (${validationResult.aspectRatioLabel})",
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp
+            )
+        }
 
-            if (exportedVideoUri != null) {
+        // Sharing Actions for Each Selected Platform after export completes
+        if (exportedVideoUri != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = "Share Exported Video:", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Spacer(modifier = Modifier.height(4.dp))
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                selectedPlatforms.forEach { platform ->
+                    Button(
+                        onClick = {
+                            SocialShareHelper.shareVideoToPlatform(context, exportedVideoUri, platform)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = TealAccent,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(text = "Share to ${platform.displayName}", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
+
+                // Generic Share Sheet Button
                 Button(
                     onClick = {
-                        val firstPlatform = selectedPlatforms.firstOrNull() ?: SocialPlatform.INSTAGRAM
-                        SocialShareHelper.shareVideoToPlatform(context, exportedVideoUri, firstPlatform)
+                        SocialShareHelper.shareVideoGeneric(context, exportedVideoUri)
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = TealAccent,
-                        contentColor = Color.Black
+                        containerColor = DarkSurfaceElevated,
+                        contentColor = Color.White
                     ),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "Share", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(text = "More Options...", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 }
             }
         }
