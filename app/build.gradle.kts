@@ -41,17 +41,35 @@ android {
             val keyPassword = localProperties.getProperty("KEY_PASSWORD")
                 ?: System.getenv("KEY_PASSWORD")
 
-            if (keystoreFile != null && File(keystoreFile).exists()) {
-                storeFile = File(keystoreFile)
+            val missingConfigs = mutableListOf<String>()
+            if (keystoreFile.isNullOrBlank() || !File(keystoreFile).exists()) {
+                missingConfigs.add("KEYSTORE_FILE (file missing or unreadable)")
+            }
+            if (keystorePassword.isNullOrBlank()) {
+                missingConfigs.add("KEYSTORE_PASSWORD")
+            }
+            if (keyAlias.isNullOrBlank()) {
+                missingConfigs.add("KEY_ALIAS")
+            }
+            if (keyPassword.isNullOrBlank()) {
+                missingConfigs.add("KEY_PASSWORD")
+            }
+
+            if (missingConfigs.isEmpty()) {
+                storeFile = File(keystoreFile!!)
                 storePassword = keystorePassword
                 this.keyAlias = keyAlias
                 this.keyPassword = keyPassword
             } else {
-                // Release build requires a valid release keystore. Pointing to a missing file causes release builds to fail.
+                val missingStr = missingConfigs.joinToString(", ")
+                val gradleTasks = gradle.startParameter.taskNames.joinToString(" ")
+                if (gradleTasks.contains("release", ignoreCase = true)) {
+                    logger.error("RELEASE BUILD ERROR: Missing required release signing credentials: $missingStr. Define them in local.properties or environment variables.")
+                }
                 storeFile = rootProject.file("missing_release_keystore.jks")
-                storePassword = "invalid_password"
-                this.keyAlias = "invalid_alias"
-                this.keyPassword = "invalid_password"
+                storePassword = "missing_password"
+                this.keyAlias = "missing_alias"
+                this.keyPassword = "missing_password"
             }
         }
     }

@@ -90,14 +90,16 @@ class DualVideoComposer(
 
                 val topState = config.topState
                 val splitRatio = config.splitRatio
+                val topDimensions = CompositionTransformEngine.retrieveMediaDimensions(context, topVideoUri)
 
                 val topMatrixTransform = MatrixTransformation { _ ->
                     CompositionTransformEngine.calculateExportMatrix(
                         sectionState = topState,
                         sectionRatio = splitRatio,
                         isTopSection = true,
-                        outputWidth = outputWidth.toFloat(),
-                        outputHeight = outputHeight.toFloat()
+                        sourceDimensions = topDimensions,
+                        outputWidthPx = outputWidth.toFloat(),
+                        outputHeightPx = outputHeight.toFloat()
                     )
                 }
                 topEffectsList.add(topMatrixTransform)
@@ -124,14 +126,16 @@ class DualVideoComposer(
 
                 val bottomState = config.bottomState
                 val splitRatio = config.splitRatio
+                val bottomDimensions = CompositionTransformEngine.retrieveMediaDimensions(context, bottomVideoUri)
 
                 val bottomMatrixTransform = MatrixTransformation { _ ->
                     CompositionTransformEngine.calculateExportMatrix(
                         sectionState = bottomState,
                         sectionRatio = 1.0f - splitRatio,
                         isTopSection = false,
-                        outputWidth = outputWidth.toFloat(),
-                        outputHeight = outputHeight.toFloat()
+                        sourceDimensions = bottomDimensions,
+                        outputWidthPx = outputWidth.toFloat(),
+                        outputHeightPx = outputHeight.toFloat()
                     )
                 }
                 bottomEffectsList.add(bottomMatrixTransform)

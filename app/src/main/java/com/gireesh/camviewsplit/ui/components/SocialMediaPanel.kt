@@ -64,6 +64,7 @@ import com.gireesh.camviewsplit.ui.theme.DarkSurfaceElevated
 import com.gireesh.camviewsplit.ui.theme.TealAccent
 import com.gireesh.camviewsplit.ui.theme.TextPrimary
 import com.gireesh.camviewsplit.ui.theme.TextSecondary
+import com.gireesh.camviewsplit.util.CompositionTransformEngine
 import com.gireesh.camviewsplit.util.ResolutionValidator
 import com.gireesh.camviewsplit.util.SocialPlatform
 import com.gireesh.camviewsplit.util.SocialShareHelper
@@ -331,6 +332,23 @@ fun SocialMediaPanel(
                 val rawAspect = validationResult.width.toFloat() / validationResult.height.coerceAtLeast(1).toFloat()
                 val safeAspect = if (rawAspect.isFinite() && rawAspect > 0f) rawAspect.coerceIn(0.2f, 5.0f) else 0.5625f
 
+                val topDims = remember(topMediaUri) { CompositionTransformEngine.retrieveMediaDimensions(context, topMediaUri) }
+                val bottomDims = remember(bottomMediaUri) { CompositionTransformEngine.retrieveMediaDimensions(context, bottomMediaUri) }
+
+                val topTransform = CompositionTransformEngine.calculateTransform(
+                    sectionState = config.topState,
+                    sourceDimensions = topDims,
+                    viewportWidthPx = validationResult.width.toFloat(),
+                    viewportHeightPx = validationResult.height.toFloat() * config.splitRatio
+                )
+
+                val bottomTransform = CompositionTransformEngine.calculateTransform(
+                    sectionState = config.bottomState,
+                    sourceDimensions = bottomDims,
+                    viewportWidthPx = validationResult.width.toFloat(),
+                    viewportHeightPx = validationResult.height.toFloat() * (1.0f - config.splitRatio)
+                )
+
                 Box(
                     modifier = Modifier
                         .aspectRatio(safeAspect, matchHeightConstraintsFirst = true)
@@ -364,10 +382,10 @@ fun SocialMediaPanel(
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .graphicsLayer(
-                                            scaleX = config.topState.zoomScale,
-                                            scaleY = config.topState.zoomScale,
-                                            translationX = (config.topState.panOffset.x / 4f).coerceIn(-200f, 200f),
-                                            translationY = (config.topState.panOffset.y / 4f).coerceIn(-200f, 200f)
+                                            scaleX = topTransform.scaleX,
+                                            scaleY = topTransform.scaleY,
+                                            translationX = topTransform.composePanX / 4f,
+                                            translationY = topTransform.composePanY / 4f
                                         )
                                 )
                             } else {
@@ -410,10 +428,10 @@ fun SocialMediaPanel(
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .graphicsLayer(
-                                            scaleX = config.bottomState.zoomScale,
-                                            scaleY = config.bottomState.zoomScale,
-                                            translationX = (config.bottomState.panOffset.x / 4f).coerceIn(-200f, 200f),
-                                            translationY = (config.bottomState.panOffset.y / 4f).coerceIn(-200f, 200f)
+                                            scaleX = bottomTransform.scaleX,
+                                            scaleY = bottomTransform.scaleY,
+                                            translationX = bottomTransform.composePanX / 4f,
+                                            translationY = bottomTransform.composePanY / 4f
                                         )
                                 )
                             } else {

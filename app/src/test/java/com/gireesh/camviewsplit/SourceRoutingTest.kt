@@ -9,6 +9,7 @@ import com.gireesh.camviewsplit.util.CompositionSourceResolver
 import com.gireesh.camviewsplit.util.CompositionTransformEngine
 import com.gireesh.camviewsplit.util.ResolutionValidator
 import com.gireesh.camviewsplit.util.SocialPlatform
+import com.gireesh.camviewsplit.util.SourceVideoDimensions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -160,24 +161,46 @@ class SourceRoutingTest {
         val fitState = VideoSectionState(contentScaleMode = ContentScaleMode.FIT, zoomScale = 1.0f)
         val fillState = VideoSectionState(contentScaleMode = ContentScaleMode.FILL, zoomScale = 1.0f)
 
-        val fitParams = CompositionTransformEngine.calculateScaleAndPan(
+        val fitParams = CompositionTransformEngine.calculateTransform(
             sectionState = fitState,
-            sourceWidth = 1920f,
-            sourceHeight = 1080f,
-            viewportWidth = 1080f,
-            viewportHeight = 960f
+            sourceDimensions = SourceVideoDimensions(1920, 1080, 0),
+            viewportWidthPx = 1080f,
+            viewportHeightPx = 960f
         )
 
-        val fillParams = CompositionTransformEngine.calculateScaleAndPan(
+        val fillParams = CompositionTransformEngine.calculateTransform(
             sectionState = fillState,
-            sourceWidth = 1920f,
-            sourceHeight = 1080f,
-            viewportWidth = 1080f,
-            viewportHeight = 960f
+            sourceDimensions = SourceVideoDimensions(1920, 1080, 0),
+            viewportWidthPx = 1080f,
+            viewportHeightPx = 960f
         )
 
         assertTrue(fillParams.scaleX >= fitParams.scaleX)
         assertTrue(fillParams.scaleY >= fitParams.scaleY)
+    }
+
+    @Test
+    fun testCompositionTransformEngineSourceAspectRatios() {
+        val portraitDims = SourceVideoDimensions(1080, 1920, 0)
+        val landscapeDims = SourceVideoDimensions(1920, 1080, 0)
+        val squareDims = SourceVideoDimensions(1080, 1080, 0)
+        val rotatedDims = SourceVideoDimensions(1920, 1080, 90)
+
+        assertEquals(0.5625f, portraitDims.aspectRatio, 0.01f)
+        assertEquals(1.777f, landscapeDims.aspectRatio, 0.01f)
+        assertEquals(1.0f, squareDims.aspectRatio, 0.01f)
+        assertEquals(0.5625f, rotatedDims.aspectRatio, 0.01f)
+
+        val fitState = VideoSectionState(contentScaleMode = ContentScaleMode.FIT)
+
+        val landParams = CompositionTransformEngine.calculateTransform(
+            sectionState = fitState,
+            sourceDimensions = landscapeDims,
+            viewportWidthPx = 1080f,
+            viewportHeightPx = 960f
+        )
+        assertTrue(landParams.scaleX <= 1.0f)
+        assertTrue(landParams.scaleY <= 1.0f)
     }
 
     @Test
@@ -186,14 +209,15 @@ class SourceRoutingTest {
             panOffset = androidx.compose.ui.geometry.Offset(10000f, -10000f)
         )
 
-        val params = CompositionTransformEngine.calculateScaleAndPan(
+        val params = CompositionTransformEngine.calculateTransform(
             sectionState = extremePanState,
-            viewportWidth = 1080f,
-            viewportHeight = 960f
+            sourceDimensions = SourceVideoDimensions(1080, 1920, 0),
+            viewportWidthPx = 1080f,
+            viewportHeightPx = 960f
         )
 
-        assertEquals(1.0f, params.normPanX, 0.01f)
-        assertEquals(-1.0f, params.normPanY, 0.01f)
+        assertEquals(2.0f, params.normPanX, 0.01f)
+        assertEquals(2.0f, params.normPanY, 0.01f)
     }
 
     @Test
