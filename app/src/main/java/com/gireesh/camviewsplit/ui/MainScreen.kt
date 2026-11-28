@@ -311,9 +311,13 @@ fun MainScreen() {
         contract = ActivityResultContracts.StartIntentSenderForResult(),
         onResult = { result ->
             val item = pendingDeleteItem
+            val wasApi30Flow = isApi30ConsentFlow
+            isApi30ConsentFlow = false
+            pendingDeleteItem = null
+
             if (result.resultCode == android.app.Activity.RESULT_OK && item != null) {
                 scope.launch {
-                    val confirmed = if (isApi30ConsentFlow) {
+                    val confirmed = if (wasApi30Flow) {
                         mediaRepository.confirmApi30Deletion(item)
                     } else {
                         mediaRepository.confirmApi29Deletion(item)
@@ -331,8 +335,6 @@ fun MainScreen() {
                     snackbarHostState.showSnackbar("Deletion permission denied.")
                 }
             }
-            pendingDeleteItem = null
-            isApi30ConsentFlow = false
         }
     )
 
