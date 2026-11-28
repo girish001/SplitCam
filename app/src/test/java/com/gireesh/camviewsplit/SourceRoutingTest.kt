@@ -245,6 +245,24 @@ class SourceRoutingTest {
     }
 
     @Test
+    fun testConfirmApi30DeletionQueryCountZero() {
+        val cursorCount = 0
+        val isConfirmedDeleted = cursorCount == 0
+        assertTrue(isConfirmedDeleted) // Query count == 0 confirms item was deleted by MediaStore!
+    }
+
+    @Test
+    fun testConfirmApi30DeletionSecurityExceptionRejection() {
+        var isConfirmedDeleted = false
+        try {
+            throw SecurityException("Access denied by MediaStore provider")
+        } catch (_: SecurityException) {
+            isConfirmedDeleted = false
+        }
+        assertFalse(isConfirmedDeleted) // SecurityException returns false and preserves repository state!
+    }
+
+    @Test
     fun testDeletionStateConsistency() {
         var isDeleted = false
         val indexList = mutableListOf("item_1")

@@ -280,21 +280,23 @@ class MediaRepository(private val context: Context) {
 
     suspend fun confirmApi30Deletion(item: MediaItem): Boolean = withContext(Dispatchers.IO) {
         val uri = item.uri
+        if (uri.scheme != "content" || uri.authority == null) {
+            return@withContext false
+        }
+
+        // Positively query MediaStore by Uri to verify whether the row still exists
         val isConfirmedDeleted = try {
-            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
-            if (pfd != null) {
-                pfd.close()
-                false
-            } else {
-                true
-            }
-        } catch (e: java.io.FileNotFoundException) {
-            true
-        } catch (e: IllegalArgumentException) {
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
+            context.contentResolver.query(
+                uri,
+                arrayOf(MediaStore.Video.Media._ID),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                cursor.count == 0
+            } ?: false
+        } catch (_: Exception) {
+            false // SecurityException or provider query error -> NOT confirmed deleted!
         }
 
         if (isConfirmedDeleted) {
