@@ -300,6 +300,7 @@ fun MainScreen() {
     val isCameraRecording by cameraCaptureManager.isRecording.collectAsState()
     val recordingDurationSeconds by cameraCaptureManager.recordingDurationSeconds.collectAsState()
     val cameraError by cameraCaptureManager.errorMessage.collectAsState()
+    val isPhotoCaptureAvailable by cameraCaptureManager.isPhotoCaptureAvailable.collectAsState()
 
     val isExportingComposition by dualVideoComposer.isExporting.collectAsState()
     val exportProgress by dualVideoComposer.exportProgress.collectAsState()
@@ -681,19 +682,20 @@ fun MainScreen() {
                                                     }
                                                 },
                                                 onError = { err ->
-                                                    scope.launch { snackbarHostState.showSnackbar("Photo error: $err") }
+                                                    scope.launch { snackbarHostState.showSnackbar(err) }
                                                 }
                                             )
                                         },
+                                        enabled = isPhotoCaptureAvailable,
                                         modifier = Modifier
                                             .size(52.dp)
-                                            .background(DarkSurfaceElevated, CircleShape)
-                                            .border(2.dp, CyanPrimary, CircleShape)
+                                            .background(if (isPhotoCaptureAvailable) DarkSurfaceElevated else DarkSurface, CircleShape)
+                                            .border(2.dp, if (isPhotoCaptureAvailable) CyanPrimary else Color.Gray, CircleShape)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.PhotoCamera,
                                             contentDescription = "Capture Photo",
-                                            tint = CyanPrimary,
+                                            tint = if (isPhotoCaptureAvailable) CyanPrimary else Color.Gray,
                                             modifier = Modifier.size(24.dp)
                                         )
                                     }
