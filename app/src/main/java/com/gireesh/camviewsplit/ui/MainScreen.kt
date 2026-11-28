@@ -279,6 +279,22 @@ fun MainScreen() {
         }
     )
 
+    // Refresh permission state on app ON_RESUME
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                hasCameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                hasAudioPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                hasWriteStoragePermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (!hasCameraPermission || !hasAudioPermission || (!hasWriteStoragePermission && Build.VERSION.SDK_INT <= Build.VERSION_CODES.P)) {
             val permissionsToRequest = mutableListOf(
@@ -326,23 +342,28 @@ fun MainScreen() {
 
             if (result.resultCode == android.app.Activity.RESULT_OK && item != null) {
                 scope.launch {
-                    val confirmed = if (wasApi30Flow) {
-                        mediaRepository.confirmApi30Deletion(item)
-                    } else {
-                        mediaRepository.confirmApi29Deletion(item)
-                    }
-                    if (confirmed) {
-                        if (selectedVideo?.id == item.id) selectedVideo = null
-                        if (selectedPhoto?.id == item.id) selectedPhoto = null
-                        snackbarHostState.showSnackbar("Media deleted")
-                    } else {
-                        snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                    try {
+                        val confirmed = if (wasApi30Flow) {
+                            mediaRepository.confirmApi30Deletion(item)
+                        } else {
+                            mediaRepository.confirmApi29Deletion(item)
+                        }
+                        if (confirmed) {
+                            if (selectedVideo?.id == item.id) selectedVideo = null
+                            if (selectedPhoto?.id == item.id) selectedPhoto = null
+                            snackbarHostState.showSnackbar("Media deleted")
+                        } else {
+                            snackbarHostState.showSnackbar("Could not delete media. Please try again.")
+                        }
+                    } finally {
+                        isDeletingMedia = false
                     }
                 }
             } else {
                 scope.launch {
                     snackbarHostState.showSnackbar("Deletion permission denied.")
                 }
+                isDeletingMedia = false
             }
         }
     )

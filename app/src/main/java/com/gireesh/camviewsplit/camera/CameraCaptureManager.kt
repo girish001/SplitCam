@@ -176,6 +176,16 @@ class CameraCaptureManager(
     ) {
         val provider = cameraProvider ?: return
 
+        val hasCameraPerm = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasCameraPerm) {
+            _isPhotoCaptureAvailable.value = false
+            return
+        }
+
         val isTopCamera = topSource is VideoSource.LiveCameraFront || topSource is VideoSource.LiveCameraRear
         val isBottomCamera = bottomSource is VideoSource.LiveCameraFront || bottomSource is VideoSource.LiveCameraRear
 
