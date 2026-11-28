@@ -30,6 +30,7 @@ fun BottomVideoViewer(
     localVideoList: List<LocalVideoItem>,
     currentLocalIndex: Int,
     isFullScreen: Boolean,
+    isRecording: Boolean = false,
     onLocalVideoListChange: (List<LocalVideoItem>) -> Unit,
     onLocalIndexChange: (Int) -> Unit,
     onToggleFullScreenClick: () -> Unit,
@@ -95,6 +96,7 @@ fun BottomVideoViewer(
                 SocialWebView(
                     source = activeSource,
                     isFullScreen = isFullScreen,
+                    isRecording = isRecording,
                     onToggleFullScreenClick = onToggleFullScreenClick,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -104,6 +106,7 @@ fun BottomVideoViewer(
                     videoList = localVideoList,
                     currentIndex = currentLocalIndex,
                     isFullScreen = isFullScreen,
+                    isRecording = isRecording,
                     onIndexChanged = onLocalIndexChange,
                     onSelectVideosClick = {
                         localVideoPickerLauncher.launch(arrayOf("video/*"))

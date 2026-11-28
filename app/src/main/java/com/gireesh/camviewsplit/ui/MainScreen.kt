@@ -664,6 +664,7 @@ fun MainScreen() {
                                                 localVideoList = localVideoPlaylist,
                                                 currentLocalIndex = currentLocalVideoIndex,
                                                 isFullScreen = isFullScreenBottomViewer,
+                                                isRecording = isCameraRecording || isExportingComposition,
                                                 onLocalVideoListChange = { newList -> localVideoPlaylist = newList },
                                                 onLocalIndexChange = { newIdx -> currentLocalVideoIndex = newIdx },
                                                 onToggleFullScreenClick = { isFullScreenBottomViewer = !isFullScreenBottomViewer },
@@ -791,7 +792,7 @@ fun MainScreen() {
                                                             primaryCameraUri = primaryCameraUri,
                                                             secondaryCameraUri = secondaryCameraUri
                                                         )
-                                                        val resolved = CompositionSourceResolver.resolve(config, sessionCameraRecordings)
+                                                        val resolved = CompositionSourceResolver.resolve(config, sessionCameraRecordings, isSocialViewerMode = (currentOperatingMode == OperatingMode.SOCIAL_VIEWER))
 
                                                         scope.launch {
                                                             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())
@@ -885,8 +886,12 @@ fun MainScreen() {
                         }
 
                         // Resolve current live/gallery top and bottom URIs for Real Output Preview & Export
-                        val liveResolvedURIs = remember(config, sessionCameraRecordings) {
-                            CompositionSourceResolver.resolve(config, sessionCameraRecordings)
+                        val liveResolvedURIs = remember(config, sessionCameraRecordings, currentOperatingMode) {
+                            CompositionSourceResolver.resolve(
+                                config = config,
+                                recordingSession = sessionCameraRecordings,
+                                isSocialViewerMode = (currentOperatingMode == OperatingMode.SOCIAL_VIEWER)
+                            )
                         }
 
                 // Export Settings Bottom Sheet Dialog

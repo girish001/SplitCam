@@ -43,6 +43,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,7 @@ import com.gireesh.camviewsplit.ui.theme.TextSecondary
 fun SocialWebView(
     source: BottomViewerSource,
     isFullScreen: Boolean = false,
+    isRecording: Boolean = false,
     onToggleFullScreenClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -90,6 +92,16 @@ fun SocialWebView(
 
     // Visible Popup WebView Dialog State
     var popupWebViewState by remember { mutableStateOf<WebView?>(null) }
+
+    // Pause WebView HTML5 playback during camera recording for audio isolation
+    LaunchedEffect(isRecording) {
+        if (isRecording) {
+            webViewInstance?.evaluateJavascript(
+                "document.querySelectorAll('video, audio').forEach(function(m){ m.pause(); });",
+                null
+            )
+        }
+    }
 
     // Safe lifecycle disposal: Destroy WebViews ONLY when exiting the Compose hierarchy
     DisposableEffect(Unit) {

@@ -16,17 +16,24 @@ object CompositionSourceResolver {
 
     fun resolve(
         config: DualVideoCompositionConfig,
-        recordingSession: RecordingSession?
+        recordingSession: RecordingSession?,
+        isSocialViewerMode: Boolean = false
     ): CompositionURIPair {
-        val isTopCamera = config.topState.source is VideoSource.LiveCameraFront || config.topState.source is VideoSource.LiveCameraRear
-        val isBottomCamera = config.bottomState.source is VideoSource.LiveCameraFront || config.bottomState.source is VideoSource.LiveCameraRear
+        val effectiveConfig = if (isSocialViewerMode) {
+            config.copy(bottomState = config.bottomState.copy(source = VideoSource.None))
+        } else {
+            config
+        }
 
-        val isSessionValid = recordingSession != null && recordingSession.isValidForConfig(config)
+        val isTopCamera = effectiveConfig.topState.source is VideoSource.LiveCameraFront || effectiveConfig.topState.source is VideoSource.LiveCameraRear
+        val isBottomCamera = effectiveConfig.bottomState.source is VideoSource.LiveCameraFront || effectiveConfig.bottomState.source is VideoSource.LiveCameraRear
+
+        val isSessionValid = recordingSession != null && recordingSession.isValidForConfig(effectiveConfig)
 
         val topUri: Uri? = if (isTopCamera) {
             if (isSessionValid) recordingSession?.primaryCameraUri else null
         } else {
-            (config.topState.source as? VideoSource.GalleryVideo)?.uri
+            (effectiveConfig.topState.source as? VideoSource.GalleryVideo)?.uri
         }
 
         val bottomUri: Uri? = if (isBottomCamera) {
@@ -34,7 +41,7 @@ object CompositionSourceResolver {
                 if (isTopCamera) recordingSession?.secondaryCameraUri else recordingSession?.primaryCameraUri
             } else null
         } else {
-            (config.bottomState.source as? VideoSource.GalleryVideo)?.uri
+            (effectiveConfig.bottomState.source as? VideoSource.GalleryVideo)?.uri
         }
 
         if (isTopCamera && topUri == null) {

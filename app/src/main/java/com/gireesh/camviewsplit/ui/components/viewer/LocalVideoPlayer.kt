@@ -92,6 +92,7 @@ fun LocalVideoPlayer(
     videoList: List<LocalVideoItem>,
     currentIndex: Int,
     isFullScreen: Boolean,
+    isRecording: Boolean = false,
     onIndexChanged: (Int) -> Unit,
     onSelectVideosClick: () -> Unit,
     onRemoveVideoClick: (Int) -> Unit,
@@ -115,6 +116,23 @@ fun LocalVideoPlayer(
 
     var isMuted by remember { mutableStateOf(false) }
     var volumeLevel by remember { androidx.compose.runtime.mutableFloatStateOf(1.0f) }
+    var previousVolumeBeforeRecording by remember { androidx.compose.runtime.mutableFloatStateOf(1.0f) }
+
+    // Mute/Pause Local Video Player while camera recording is active for audio isolation
+    LaunchedEffect(isRecording, exoPlayer) {
+        exoPlayer?.let { player ->
+            if (isRecording) {
+                previousVolumeBeforeRecording = player.volume
+                player.volume = 0f
+                player.pause()
+            } else {
+                player.volume = if (isMuted) 0f else volumeLevel
+                if (currentUserPlaybackIntent) {
+                    player.play()
+                }
+            }
+        }
+    }
     var scaleMode by remember { mutableStateOf(ContentScaleMode.FIT) }
     var isAutoPlayNext by remember { mutableStateOf(true) }
 
