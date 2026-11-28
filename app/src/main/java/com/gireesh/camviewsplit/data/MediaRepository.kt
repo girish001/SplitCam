@@ -156,9 +156,10 @@ class MediaRepository(private val context: Context) {
             item
         }
 
-    suspend fun importMediaUris(uris: List<Uri>) = withContext(Dispatchers.IO) {
+    suspend fun importMediaUris(uris: List<Uri>): List<MediaItem> = withContext(Dispatchers.IO) {
         val newItems = mutableListOf<MediaItem>()
         for (uri in uris) {
+            var targetFile: File? = null
             try {
                 val (originalName, detectedIsVideo) = resolveUriDetails(uri)
                 val ext = if (detectedIsVideo) {
@@ -167,7 +168,7 @@ class MediaRepository(private val context: Context) {
                     if (originalName.contains(".")) ".${originalName.substringAfterLast('.')}" else ".jpg"
                 }
                 val filename = "import_${System.currentTimeMillis()}_${(1000..9999).random()}$ext"
-                val targetFile = File(importedDir, filename)
+                targetFile = File(importedDir, filename)
 
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     FileOutputStream(targetFile).use { output ->
@@ -175,7 +176,7 @@ class MediaRepository(private val context: Context) {
                     }
                 }
 
-                if (targetFile.exists() && targetFile.length() > 0) {
+                if (targetFile != null && targetFile.exists() && targetFile.length() > 0) {
                     val fileUri = Uri.fromFile(targetFile)
                     var duration = 0L
                     if (detectedIsVideo) {
@@ -191,9 +192,12 @@ class MediaRepository(private val context: Context) {
                         isImported = true
                     )
                     newItems.add(item)
+                } else {
+                    if (targetFile != null && targetFile.exists()) targetFile.delete()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                if (targetFile != null && targetFile.exists()) targetFile.delete()
             }
         }
 
@@ -202,6 +206,8 @@ class MediaRepository(private val context: Context) {
             current.addAll(0, newItems)
             _mediaItems.value = current
         }
+
+        newItems
     }
 
     suspend fun deleteMediaItem(item: MediaItem): Boolean = withContext(Dispatchers.IO) {

@@ -24,6 +24,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -96,6 +97,7 @@ import com.gireesh.camviewsplit.ui.components.LayoutPresetBar
 import com.gireesh.camviewsplit.ui.components.PhotoViewer
 import com.gireesh.camviewsplit.model.BottomViewerSource
 import com.gireesh.camviewsplit.model.LocalVideoItem
+import com.gireesh.camviewsplit.model.OperatingMode
 import com.gireesh.camviewsplit.model.RecordingSession
 import com.gireesh.camviewsplit.ui.components.viewer.AdjustableSplitLayout
 import com.gireesh.camviewsplit.ui.components.viewer.BottomVideoViewer
@@ -145,6 +147,9 @@ fun MainScreen() {
     LaunchedEffect(config.splitRatio) {
         prefs.edit().putFloat("split_ratio", config.splitRatio).apply()
     }
+
+    // Operating Mode Selection (Dual Camera Composition vs Camera + Social/Local Viewer)
+    var currentOperatingMode by remember { mutableStateOf(OperatingMode.SOCIAL_VIEWER) }
 
     // Bottom Section Viewer States (Instagram | Facebook | YouTube | Local Storage)
     var activeBottomSource by remember { mutableStateOf(BottomViewerSource.LOCAL_STORAGE) }
@@ -223,14 +228,17 @@ fun MainScreen() {
                 } catch (_: Exception) {}
 
                 scope.launch {
-                    mediaRepository.importMediaUris(listOf(uri))
-                    val importedItem = mediaRepository.mediaItems.value.firstOrNull()
-                    val targetUri = importedItem?.uri ?: uri
-                    val source = VideoSource.GalleryVideo(uri = targetUri, displayName = importedItem?.displayName ?: "Selected Video")
-                    if (targetSectionForPicker == "TOP") {
-                        config = config.copy(topState = config.topState.copy(source = source))
+                    val importedItems = mediaRepository.importMediaUris(listOf(uri))
+                    val importedItem = importedItems.firstOrNull()
+                    if (importedItem != null) {
+                        val source = VideoSource.GalleryVideo(uri = importedItem.uri, displayName = importedItem.displayName)
+                        if (targetSectionForPicker == "TOP") {
+                            config = config.copy(topState = config.topState.copy(source = source))
+                        } else {
+                            config = config.copy(bottomState = config.bottomState.copy(source = source))
+                        }
                     } else {
-                        config = config.copy(bottomState = config.bottomState.copy(source = source))
+                        snackbarHostState.showSnackbar("Failed to import video.")
                     }
                 }
             }
@@ -438,8 +446,39 @@ fun MainScreen() {
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
                 ) {
-                    // Top Controls: Layout Presets & Audio Controls
+                    // Top Controls: Mode Selector, Layout Presets & Audio Controls
                     if (!isCameraRecording && !isExportingComposition && selectedVideo == null && selectedPhoto == null) {
+                        // Mode Selector Tab Row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(DarkSurfaceElevated)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            OperatingMode.values().forEach { mode ->
+                                val isSelected = currentOperatingMode == mode
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 4.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) CyanPrimary.copy(alpha = 0.25f) else Color.Transparent)
+                                        .border(1.dp, if (isSelected) CyanPrimary else DarkBorder, RoundedCornerShape(8.dp))
+                                        .clickable { currentOperatingMode = mode }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = mode.displayName,
+                                        color = if (isSelected) CyanPrimary else TextSecondary,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+
                         LayoutPresetBar(
                             config = config,
                             onConfigChange = { newConfig -> config = newConfig }
@@ -572,17 +611,43 @@ fun MainScreen() {
                                         )
                                     },
                                     bottomContent = {
-                                        BottomVideoViewer(
-                                            activeSource = activeBottomSource,
-                                            onSourceChange = { newSource -> activeBottomSource = newSource },
-                                            localVideoList = localVideoPlaylist,
-                                            currentLocalIndex = currentLocalVideoIndex,
-                                            isFullScreen = isFullScreenBottomViewer,
-                                            onLocalVideoListChange = { newList -> localVideoPlaylist = newList },
-                                            onLocalIndexChange = { newIdx -> currentLocalVideoIndex = newIdx },
-                                            onToggleFullScreenClick = { isFullScreenBottomViewer = !isFullScreenBottomViewer },
-                                            modifier = Modifier.fillMaxSize()
-                                        )
+                                        if (currentOperatingMode == OperatingMode.CAMERA_COMPOSITION) {
+                                            InteractiveVideoViewport(
+                                                title = "BOTTOM",
+                                                state = config.bottomState,
+                                                previewView = bottomPreviewView,
+                                                isRecording = isCameraRecording || isExportingComposition,
+                                                onStateChange = { newState -> config = config.copy(bottomState = newState) },
+                                                onSelectGalleryMediaClick = {
+                                                    targetSectionForPicker = "BOTTOM"
+                                                    mediaPickerLauncher.launch("video/*")
+                                                },
+                                                onSwitchCameraClick = {
+                                                    val newSource = if (config.bottomState.source is VideoSource.LiveCameraFront) {
+                                                        VideoSource.LiveCameraRear
+                                                    } else {
+                                                        VideoSource.LiveCameraFront
+                                                    }
+                                                    config = config.copy(bottomState = config.bottomState.copy(source = newSource))
+                                                },
+                                                onRemoveSourceClick = {
+                                                    config = config.copy(bottomState = config.bottomState.copy(source = VideoSource.None))
+                                                },
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            BottomVideoViewer(
+                                                activeSource = activeBottomSource,
+                                                onSourceChange = { newSource -> activeBottomSource = newSource },
+                                                localVideoList = localVideoPlaylist,
+                                                currentLocalIndex = currentLocalVideoIndex,
+                                                isFullScreen = isFullScreenBottomViewer,
+                                                onLocalVideoListChange = { newList -> localVideoPlaylist = newList },
+                                                onLocalIndexChange = { newIdx -> currentLocalVideoIndex = newIdx },
+                                                onToggleFullScreenClick = { isFullScreenBottomViewer = !isFullScreenBottomViewer },
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
                                     },
                                     modifier = Modifier.fillMaxSize()
                                 )

@@ -114,6 +114,7 @@ fun LocalVideoPlayer(
     val currentUserPlaybackIntent by rememberUpdatedState(userPlaybackIntent)
 
     var isMuted by remember { mutableStateOf(false) }
+    var volumeLevel by remember { androidx.compose.runtime.mutableFloatStateOf(1.0f) }
     var scaleMode by remember { mutableStateOf(ContentScaleMode.FIT) }
     var isAutoPlayNext by remember { mutableStateOf(true) }
 
@@ -152,7 +153,7 @@ fun LocalVideoPlayer(
             playbackErrorMsg = null
             val player = ExoPlayer.Builder(context).build().apply {
                 setMediaItem(MediaItem.fromUri(currentVideo.uri))
-                volume = if (isMuted) 0f else 1f
+                volume = if (isMuted) 0f else volumeLevel
                 prepare()
                 playWhenReady = currentUserPlaybackIntent
 
